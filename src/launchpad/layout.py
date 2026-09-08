@@ -27,20 +27,28 @@ def _rows(*rows: int) -> list[int]:
     return [note_for(row, col) for row in rows for col in range(1, 9)]
 
 
+# Codex CLI and Codex app share one bank: the CLI zone sat permanently dark,
+# and threads from the desktop app are what actually need the room.
+_CODEX_BANK = _rows(6, 5, 4, 3)
+
 ZONES: dict[Kind, list[int]] = {
     Kind.CLAUDE: _rows(8, 7),
-    Kind.CODEX_CLI: _rows(6, 5),
-    Kind.CODEX_APP: _rows(4, 3),
+    Kind.CODEX_CLI: _CODEX_BANK,
+    Kind.CODEX_APP: _CODEX_BANK,
     Kind.SHELL: _rows(2),
 }
 
 # Right-column buttons, aligned with the two rows of the zone they summarise.
-ZONE_SUMMARY: dict[Kind, list[int]] = {
-    Kind.CLAUDE: [89, 79],
-    Kind.CODEX_CLI: [69, 59],
-    Kind.CODEX_APP: [49, 39],
-    Kind.SHELL: [29],
-}
+# Right-column buttons, aligned with the rows of the zone they summarise. A
+# group can cover more than one kind, since Codex CLI and app share a bank.
+ZONE_SUMMARY: list[tuple[list[int], tuple[Kind, ...]]] = [
+    ([89, 79], (Kind.CLAUDE,)),
+    ([69, 59, 49, 39], (Kind.CODEX_CLI, Kind.CODEX_APP)),
+    ([29], (Kind.SHELL,)),
+]
+
+# Round button that jumps to whatever session is blocked on you.
+ATTENTION_PAD = 91
 
 # Top-row tiles. Keys match the `key` of the Session that AppSource builds.
 # App launchers occupy the bottom row of the grid, where they are under your
@@ -177,15 +185,21 @@ class Layout:
         pads[RESCAN_PAD] = ("rgb", 10, 10, 10)
 
         # Right-column zone summaries.
-        for kind, buttons in ZONE_SUMMARY.items():
-            members = [s for s in mapping.values() if s.kind is kind]
-            colour = summary_colour(kind, members, kind in self.overflow)
+        for buttons, kinds in ZONE_SUMMARY:
+            members = [s for s in mapping.values() if s.kind in kinds]
+            overflowed = any(k in self.overflow for k in kinds)
+            colour = summary_colour(kinds[0], members, overflowed)
             for button in buttons:
                 pads[button] = colour
 
+        # The attention button only exists when something is actually waiting,
+        # so the board never invites a press that would do nothing.
+        waiting = [s for s in mapping.values() if s.state is State.WAITING]
+        pads[ATTENTION_PAD] = ("flash", _WHITE, 0) if waiting else ("rgb", 6, 6, 6)
+
         return pads, mapping
 
-    def newest_in(self, kind: Kind, sessions: dict[str, Session]) -> Session | None:
+    def newest_in(self, kinds: tuple[Kind, ...], sessions: dict[str, Session]) -> Session | None:
         """Most recently active session in a zone, for its summary button."""
-        members = [s for s in sessions.values() if s.kind is kind]
+        members = [s for s in sessions.values() if s.kind in kinds]
         return max(members, key=lambda s: s.last_event, default=None)

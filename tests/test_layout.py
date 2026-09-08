@@ -18,9 +18,12 @@ def make(key: str, kind: Kind, state: State = State.IDLE, last: float = 0.0) -> 
 
 
 def test_zones_and_the_app_row_do_not_overlap():
-    pads = [pad for bank in ZONES.values() for pad in bank]
+    # Codex CLI and Codex app deliberately share one bank, so compare the
+    # distinct banks rather than every kind's list.
+    banks = {id(bank): bank for bank in ZONES.values()}.values()
+    pads = [pad for bank in banks for pad in bank]
     assert len(pads) == len(set(pads))
-    summaries = [b for buttons in ZONE_SUMMARY.values() for b in buttons]
+    summaries = [b for buttons, _kinds in ZONE_SUMMARY for b in buttons]
     assert not set(pads) & set(summaries)
     assert RESCAN_PAD not in set(pads) | set(summaries)
     # App launchers live on the bottom grid row, so nothing else may claim it.
@@ -38,6 +41,11 @@ def test_adjacent_app_tiles_are_visibly_different():
     for left, right in zip(ordered, ordered[1:]):
         distance = sum(abs(a - b) for a, b in zip(left, right))
         assert distance >= 40, f"{left} and {right} are too close to tell apart"
+
+
+def test_codex_cli_and_app_share_one_bank():
+    assert ZONES[Kind.CODEX_CLI] is ZONES[Kind.CODEX_APP]
+    assert len(ZONES[Kind.CODEX_APP]) == 32
 
 
 def test_each_kind_lands_in_its_own_zone():
@@ -137,3 +145,16 @@ def test_app_tiles_are_painted_at_their_fixed_pads():
     for key, pad in APP_TILES.items():
         assert mapping[pad].key == key
     assert RESCAN_PAD in pads
+
+
+def test_the_attention_button_only_lights_when_something_waits():
+    from launchpad.layout import ATTENTION_PAD
+
+    layout = Layout()
+    calm = {"a": make("a", Kind.CLAUDE, State.WORKING)}
+    pads, _ = layout.pads(calm)
+    assert pads[ATTENTION_PAD][0] == "rgb", "nothing waiting: no invitation to press"
+
+    blocked = {"a": make("a", Kind.CLAUDE, State.WAITING)}
+    pads, _ = layout.pads(blocked)
+    assert pads[ATTENTION_PAD][0] == "flash"

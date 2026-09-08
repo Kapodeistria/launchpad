@@ -10,7 +10,7 @@ from .apps import AppSource
 from .device import LOGO, Launchpad
 from .focus import focus
 from .iterm import BRIDGE
-from .layout import APP_TILES, RESCAN_PAD, ZONE_SUMMARY, Layout
+from .layout import APP_TILES, ATTENTION_PAD, RESCAN_PAD, ZONE_SUMMARY, Layout
 from .model import Kind, Session, State
 from .sources import ClaudeSource, CodexSource, ItermSource, prune
 
@@ -18,6 +18,8 @@ from .sources import ClaudeSource, CodexSource, ItermSource, prune
 # (INPUT_INTERVAL) so a pad responds immediately rather than waiting for the
 # next refresh tick.
 POLL_INTERVAL = 0.4
+# Hold a pad longer than this and it scrolls its name instead of opening it.
+HOLD_SECONDS = 0.45
 # How often to re-enter Programmer Mode in case something knocked the device
 # out of it. Cheap: one SysEx plus a full repaint.
 REASSERT_INTERVAL = 5.0
@@ -41,7 +43,8 @@ class Daemon:
         self._last_report = ""
         # Presses arrive on the MIDI callback thread and are handed to a worker
         # so a slow fallback path can never stall incoming input.
-        self._presses: queue.Queue[int] = queue.Queue()
+        self._presses: queue.Queue[tuple[int, float]] = queue.Queue()
+        self._text_until = 0.0
 
     # -- state --------------------------------------------------------
     def refresh(self, force: bool = False) -> None:
@@ -60,6 +63,11 @@ class Daemon:
     def render(self, lp: Launchpad) -> None:
         pads, mapping = self.layout.pads(self.sessions)
         self.pad_map = mapping
+        if time.time() < self._text_until:
+            return          # scrolling text owns the grid until it finishes
+        if self._text_until:
+            self._text_until = 0.0
+            lp.stop_text()
         live = [s for s in self.sessions.values() if s.kind is not Kind.APP]
         needs_you = any(s.state is State.WAITING for s in live)
         busy = any(s.state is State.WORKING for s in live)
@@ -82,7 +90,13 @@ class Daemon:
             print(text, flush=True)
 
     # -- input --------------------------------------------------------
-    def handle(self, pad: int, lp: Launchpad) -> None:
+    def handle(self, pad: int, held: float, lp: Launchpad) -> None:
+        if held >= HOLD_SECONDS:
+            self._announce(pad, lp)
+            return
+        if pad == ATTENTION_PAD:
+            self._open_next_waiting(pad)
+            return
         if pad == RESCAN_PAD:
             lp.clear()
             self.refresh(force=True)
@@ -90,9 +104,9 @@ class Daemon:
             return
 
         # A zone summary button focuses that zone's most recently active session.
-        for kind, buttons in ZONE_SUMMARY.items():
+        for buttons, kinds in ZONE_SUMMARY:
             if pad in buttons:
-                target = self.layout.newest_in(kind, self.sessions)
+                target = self.layout.newest_in(kinds, self.sessions)
                 if target is not None:
                     self._open(pad, target)
                 return
@@ -101,6 +115,33 @@ class Daemon:
         if target is None:
             print(f"  -> pad {pad}: nothing assigned ({len(self.pad_map)} tiles known)", flush=True)
             return
+        self._open(pad, target)
+
+    def _announce(self, pad: int, lp: Launchpad) -> None:
+        """Scroll a held pad's name across the grid, since pads have no labels."""
+        session = self.pad_map.get(pad)
+        if session is None:
+            return
+        name = (session.label or session.project or session.session_id)[:48]
+        lp.scroll_text(name.upper())
+        # Roughly how long the device takes to scroll it; the board repaints
+        # itself once this passes.
+        self._text_until = time.time() + min(2.0 + 0.32 * len(name), 12.0)
+        print(f"  -> pad {pad}: showing {name!r}", flush=True)
+
+    def _open_next_waiting(self, pad: int) -> None:
+        """Jump to a session that is blocked on you, cycling if several are."""
+        waiting = sorted(
+            (s for s in self.sessions.values() if s.state is State.WAITING),
+            key=lambda s: s.last_event,
+        )
+        if not waiting:
+            print(f"  -> pad {pad}: nothing is waiting on you", flush=True)
+            return
+        # Round-robin so repeated presses walk the queue rather than sticking.
+        self._waiting_cursor = getattr(self, "_waiting_cursor", 0) % len(waiting)
+        target = waiting[self._waiting_cursor]
+        self._waiting_cursor += 1
         self._open(pad, target)
 
     def _open(self, pad: int, session: Session) -> None:
@@ -128,16 +169,16 @@ class Daemon:
         def worker() -> None:
             while not stopping.is_set():
                 try:
-                    pad = self._presses.get(timeout=0.2)
+                    pad, held = self._presses.get(timeout=0.2)
                 except queue.Empty:
                     continue
                 try:
-                    self.handle(pad, lp)
+                    self.handle(pad, held, lp)
                 except Exception as exc:  # noqa: BLE001 - one bad press must not end the loop
                     print(f"  !! press {pad}: {exc!r}", flush=True)
 
         threading.Thread(target=worker, daemon=True, name="press-worker").start()
-        lp.on_press(self._presses.put)
+        lp.on_press(lambda pad, held: self._presses.put((pad, held)))
 
         print("launchpad: watching Claude, Codex, terminals and apps. Ctrl-C to stop.", flush=True)
         try:

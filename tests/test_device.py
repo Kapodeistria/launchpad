@@ -89,7 +89,7 @@ def test_reassert_forces_a_full_repaint(lp):
     assert len(lp._out.sent) == before + 2
 
 
-def test_on_press_reports_presses_and_ignores_releases():
+def test_a_pad_reports_once_per_press_with_its_hold_time():
     messages = [
         mido.Message("note_on", note=81, velocity=127),   # press
         mido.Message("note_on", note=81, velocity=0),     # release
@@ -97,16 +97,31 @@ def test_on_press_reports_presses_and_ignores_releases():
         mido.Message("control_change", control=LOGO, value=0),
     ]
     device = Launchpad(out=FakeOut(), inp=FakeIn(messages))
-    seen: list[int] = []
-    device.on_press(seen.append)
+    seen: list[tuple[int, float]] = []
+    device.on_press(lambda pad, held: seen.append((pad, held)))
     device._reader.join(timeout=2)
-    assert seen == [81, LOGO]
+    assert [pad for pad, _ in seen] == [81, LOGO], "one event per press, on release"
+    assert all(held >= 0 for _, held in seen)
+
+
+def test_a_release_without_a_press_is_ignored():
+    # The board can be repainted mid-press, or the daemon started with a pad
+    # already down; a stray release must not fire an action.
+    device = Launchpad(
+        out=FakeOut(), inp=FakeIn([mido.Message("note_on", note=81, velocity=0)])
+    )
+    seen: list[int] = []
+    device.on_press(lambda pad, held: seen.append(pad))
+    device._reader.join(timeout=2)
+    assert seen == []
 
 
 def test_a_raising_handler_does_not_kill_the_reader():
     messages = [
         mido.Message("note_on", note=81, velocity=127),
+        mido.Message("note_on", note=81, velocity=0),
         mido.Message("note_on", note=82, velocity=127),
+        mido.Message("note_on", note=82, velocity=0),
     ]
     device = Launchpad(out=FakeOut(), inp=FakeIn(messages))
     seen: list[int] = []
@@ -115,6 +130,6 @@ def test_a_raising_handler_does_not_kill_the_reader():
         seen.append(pad)
         raise RuntimeError("boom")
 
-    device.on_press(handler)
+    device.on_press(lambda pad, _held: handler(pad))
     device._reader.join(timeout=2)
     assert seen == [81, 82], "one bad press must not stop later ones"

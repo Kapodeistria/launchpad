@@ -12,10 +12,9 @@ straight to that session's terminal tab.
    8  │ C   C   C   C   C   C   C  │  ◄ Claude (iTerm)      orange  [●] 89
    7  │ C   C   C   C   C   C   C  │                                [●] 79
       ├────────────────────────────┤
-   6  │ x   x   x   x   x   x   x  │  ◄ Codex CLI (iTerm)   cyan    [●] 69
-   5  │ x   x   x   x   x   x   x  │                                [●] 59
-      ├────────────────────────────┤
-   4  │ a   a   a   a   a   a   a  │  ◄ Codex app threads   blue    [●] 49
+   6  │ a   a   a   a   a   a   a  │  ◄ Codex: app threads  blue    [●] 69
+   5  │ a   a   a   a   a   a   a  │    and CLI sessions    cyan    [●] 59
+   4  │ a   a   a   a   a   a   a  │                                [●] 49
    3  │ a   a   a   a   a   a   a  │                                [●] 39
       ├────────────────────────────┤
    2  │ .   .   .   .   .   .   .  │  ◄ other terminals     white   [●] 29
@@ -24,7 +23,14 @@ straight to that session's terminal tab.
       └────────────────────────────┘
 ```
 
-Sessions fill the grid from the top down, most urgent surface first. App
+The round button above the right column (`[!]`) blinks white whenever a session
+is blocked on you, and pressing it jumps straight there — repeated presses walk
+through them if several are waiting. It stays dark otherwise, so the board never
+invites a press that would do nothing.
+
+Sessions fill the grid from the top down, most urgent surface first. Codex CLI
+and Codex app share one 32-pad bank: the CLI zone sat permanently dark, and
+desktop threads are what actually need the room. App
 launchers sit on the bottom row, under your thumb. The round button at the end
 of that row rescans: it clears the board and re-polls everything.
 
@@ -55,6 +61,13 @@ far enough apart in RGB to tell apart.
 A tile dims to a fifth brightness while its app is not running.
 
 The round logo button reflects the most urgent state anywhere on the board.
+
+## Hold a pad to see what it is
+
+Pads have no labels, so holding one for ~0.45 s scrolls its project name across
+the grid in the device's own font, then the board repaints itself. A tap opens
+the session as usual; the two are told apart by how long the pad was held, which
+is why presses are acted on at release rather than on contact.
 
 ## What each colour means
 
@@ -191,10 +204,10 @@ looking at the device.
   is a stub that reports zero windows even while the app is open, so neither
   tile can enumerate conversations. Codex *threads* are still tracked through
   their rollout transcripts, and labelled with the first thing you actually
-  typed in them. But ChatGPT.app runs a *single* window titled just "ChatGPT"
-  with threads inside it, so there is no per-thread window to raise: pressing a
-  Codex pad brings the app forward and no further. Codex CLI sessions in iTerm
-  focus their exact tab.
+  typed in them. Pressing a Codex pad opens that exact thread through the
+  `codex://threads/<id>` route found in the app bundle — neither the window nor
+  the accessibility tree is any help (there is one window, titled "ChatGPT",
+  and Electron exposes an empty AX tree), but the URL scheme is.
 * **Each zone holds 16 sessions.** Beyond that the zone's summary button blinks
   white and the extra sessions are not shown.
 * Sessions discovered only via iTerm carry glyph-derived state, which cannot

@@ -47,10 +47,13 @@ def focus(session: Session) -> bool:
         if _osascript(_FOCUS_ITERM % session.iterm_uuid) == "ok":
             return True
     if session.kind is Kind.CODEX_APP:
-        # Codex Desktop exposes no per-thread deep link, and ChatGPT.app runs a
-        # single window titled just "ChatGPT" -- so matching a thread label
-        # against window titles can never succeed. It only cost ~320 ms of
-        # AppleScript before failing, so go straight to activating the app.
+        # ChatGPT.app registers a `codex://` scheme, and `codex://threads/<id>`
+        # is a real route in its bundle -- so a thread can be opened directly
+        # rather than only bringing the app forward. The window itself is no
+        # help: there is exactly one, titled "ChatGPT", and its Electron
+        # accessibility tree is empty.
+        if open_url(f"codex://threads/{session.session_id}"):
+            return True
         return activate("ChatGPT")
     if session.kind is Kind.APP and session.bundle:
         return activate(session.bundle)
@@ -113,6 +116,17 @@ def activate(app: str) -> bool:
     except (subprocess.SubprocessError, OSError):
         pass
     return _osascript(f'tell application "{app}" to activate\nreturn "ok"') == "ok"
+
+
+def open_url(url: str) -> bool:
+    """Hand a URL to LaunchServices, which routes it to its registered app."""
+    try:
+        done = subprocess.run(
+            ["/usr/bin/open", url], capture_output=True, timeout=5, check=False
+        )
+        return done.returncode == 0
+    except (subprocess.SubprocessError, OSError):
+        return False
 
 
 def raise_window(app: str, contains: str) -> bool:

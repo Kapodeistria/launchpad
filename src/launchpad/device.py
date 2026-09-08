@@ -11,6 +11,7 @@ bottom-left and 88 is top-right. The surrounding round buttons are CCs:
 from __future__ import annotations
 
 import threading
+import time
 
 import mido
 
@@ -119,8 +120,25 @@ class Launchpad:
         self._flush([[_RGB, pad, 0, 0, 0] for pad in GRID + TOP_ROW + RIGHT_COL + [LOGO]])
 
     # -- input --------------------------------------------------------
+    def scroll_text(self, text: str, colour: int = 3, speed: int = 24) -> None:
+        """Scroll text across the whole grid in the device's own font.
+
+        The Launchpad renders text itself, which is the only way to label a pad
+        on hardware that has no screen. It takes the grid over while it runs.
+        """
+        payload = [ord(c) for c in text if 0 < ord(c) < 128]
+        self._sysex(0x07, 0x00, speed, colour, *payload[:64])
+
+    def stop_text(self) -> None:
+        self._sysex(0x07)
+        self._shadow.clear()
+
     def on_press(self, handler) -> None:
-        """Call `handler(pad)` the moment a pad is pressed.
+        """Call `handler(pad, held)` when a pad is released.
+
+        `held` is how long it was down, so callers can separate a tap from a
+        hold. Releases carry the timing, so the handler fires on release rather
+        than on contact.
 
         A dedicated thread blocks in `receive()` rather than polling, so there
         is no poll interval to wait out and a press lands in well under a
@@ -133,6 +151,8 @@ class Launchpad:
         to a worker.
         """
 
+        down: dict[int, float] = {}
+
         def reader() -> None:
             while not self._closing:
                 try:
@@ -141,16 +161,23 @@ class Launchpad:
                     return
                 if msg is None:
                     continue
-                pad = None
-                if msg.type == "note_on" and msg.velocity > 0:
-                    pad = msg.note
-                elif msg.type == "control_change" and msg.value > 0:
-                    pad = msg.control
-                if pad is not None:
-                    try:
-                        handler(pad)
-                    except Exception:  # noqa: BLE001 - never kill the reader
-                        pass
+                if msg.type == "note_on":
+                    pad, pressed = msg.note, msg.velocity > 0
+                elif msg.type == "control_change":
+                    pad, pressed = msg.control, msg.value > 0
+                else:
+                    continue
+
+                if pressed:
+                    down[pad] = time.monotonic()
+                    continue
+                started = down.pop(pad, None)
+                if started is None:
+                    continue  # release without a press we saw
+                try:
+                    handler(pad, time.monotonic() - started)
+                except Exception:  # noqa: BLE001 - never kill the reader
+                    pass
 
         self._reader = threading.Thread(target=reader, daemon=True, name="midi-reader")
         self._reader.start()
