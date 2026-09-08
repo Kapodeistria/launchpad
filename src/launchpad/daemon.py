@@ -7,11 +7,16 @@ import time
 from .apps import AppSource
 from .device import LOGO, Launchpad
 from .focus import focus
+from .iterm import BRIDGE
 from .layout import APP_TILES, RESCAN_PAD, ZONE_SUMMARY, Layout
 from .model import Kind, Session, State
 from .sources import ClaudeSource, CodexSource, ItermSource, prune
 
+# How often the board is repainted. Presses are read far more often than this
+# (INPUT_INTERVAL) so a pad responds immediately rather than waiting for the
+# next refresh tick.
 POLL_INTERVAL = 0.4
+INPUT_INTERVAL = 0.01
 # Scanning iTerm and the apps shells out to osascript, so it runs on a slower
 # cadence than tailing the event log.
 SCAN_INTERVAL = 3.0
@@ -97,17 +102,22 @@ class Daemon:
 
     # -- loop ---------------------------------------------------------
     def run(self) -> None:
+        BRIDGE.start()
         lp = Launchpad()
         lp.programmer_mode(True)
         lp.clear()
         print("launchpad: watching Claude, Codex, terminals and apps. Ctrl-C to stop.", flush=True)
         try:
+            last_paint = 0.0
             while True:
-                self.refresh()
-                self.render(lp)
+                now = time.time()
+                if now - last_paint >= POLL_INTERVAL:
+                    last_paint = now
+                    self.refresh()
+                    self.render(lp)
                 for pad in lp.presses():
                     self.handle(pad, lp)
-                time.sleep(POLL_INTERVAL)
+                time.sleep(INPUT_INTERVAL)
         except KeyboardInterrupt:
             print("\nlaunchpad: stopping", flush=True)
         finally:

@@ -90,6 +90,32 @@ class ClaudeSource:
         sess.seen = float(evt.get("ts") or time.time())
 
 
+def _thread_title(path: Path, limit: int = 60) -> str:
+    """First thing you actually typed in a Codex thread, used as its label.
+
+    The transcript opens with developer/system messages and synthetic context
+    blocks wrapped in XML tags; the first `user` message whose text does not
+    start with "<" is the real prompt.
+    """
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            for _ in range(limit):
+                line = fh.readline()
+                if not line:
+                    break
+                if '"role": "user"' not in line and '"role":"user"' not in line:
+                    continue
+                payload = json.loads(line).get("payload", {})
+                for part in payload.get("content", []):
+                    text = (part.get("text") or "").strip()
+                    if text and not text.startswith("<"):
+                        first = text.splitlines()[0].strip()
+                        return first[:57] + "..." if len(first) > 60 else first
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return ""
+
+
 class CodexSource:
     """Tails Codex rollout transcripts under ~/.codex/sessions/YYYY/MM/DD/."""
 
@@ -154,7 +180,7 @@ class CodexSource:
                     "session_id": payload["session_id"],
                     "cwd": payload.get("cwd", ""),
                     "kind": Kind.CODEX_APP if "desktop" in originator else Kind.CODEX_CLI,
-                    "label": payload.get("originator") or "Codex",
+                    "label": _thread_title(path) or payload.get("originator") or "Codex",
                 }
         except (OSError, ValueError, KeyError):
             result = None

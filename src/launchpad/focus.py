@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import subprocess
 
+from .iterm import BRIDGE
 from .model import Kind, Session
 
 _FOCUS_ITERM = """
@@ -39,6 +40,10 @@ def _osascript(script: str, timeout: float = 5.0) -> str:
 def focus(session: Session) -> bool:
     """Focus the session's terminal tab or app. True if something was raised."""
     if session.iterm_uuid:
+        # The websocket API costs ~5 ms against ~175 ms for AppleScript, which
+        # is the difference between a press feeling instant and feeling laggy.
+        if BRIDGE.available and BRIDGE.focus(session.iterm_uuid):
+            return True
         if _osascript(_FOCUS_ITERM % session.iterm_uuid) == "ok":
             return True
     if session.kind is Kind.CODEX_APP:
@@ -57,6 +62,10 @@ def iterm_sessions() -> dict[str, tuple[str, str]]:
     The tty is what lets us match a tab to the `claude`/`codex` process running
     inside it, so sessions can be discovered without waiting for a hook.
     """
+    if BRIDGE.available:
+        found = BRIDGE.sessions()
+        if found:
+            return found
     # Note: AppleScript's `tab` constant cannot be used here -- iTerm's own
     # dictionary defines a `tab` class that shadows it -- hence a literal
     # separator string.

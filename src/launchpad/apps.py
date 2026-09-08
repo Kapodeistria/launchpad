@@ -26,6 +26,7 @@ from .model import Kind, Session, State
 CHATGPT_APP = "ChatGPT"
 OUTLOOK_APP = "Microsoft Outlook"
 TEAMS_APP = "Microsoft Teams"
+PROTON_APP = "Proton Mail"
 
 # Dock badge labels are matched against these, case-insensitively.
 _DOCK_NAMES = {"outlook": OUTLOOK_APP, "teams": TEAMS_APP}
@@ -45,7 +46,7 @@ def running_apps() -> set[str]:
     except (subprocess.SubprocessError, OSError):
         return set()
     found = set()
-    for name in (CHATGPT_APP, OUTLOOK_APP, TEAMS_APP):
+    for name in (CHATGPT_APP, OUTLOOK_APP, TEAMS_APP, PROTON_APP):
         if f"/{name}.app/Contents/MacOS/" in out:
             found.add(name)
     return found
@@ -131,6 +132,10 @@ class AppSource:
         teams = tile("app:teams", "Teams", TEAMS_APP)
         teams.badge = badges.get(TEAMS_APP, 0)
         teams.state = State.IDLE if TEAMS_APP in running else State.ERROR
+
+        proton = tile("app:proton", "Proton Mail", PROTON_APP)
+        proton.badge = badges.get(PROTON_APP, 0)
+        proton.state = State.IDLE if PROTON_APP in running else State.ERROR
 
     @staticmethod
     def accessibility_ok() -> bool:

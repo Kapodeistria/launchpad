@@ -42,7 +42,12 @@ The **top row** holds the things there is exactly one of:
 | 2 | Codex | breathes while any Codex thread works | raise the Codex window |
 | 3 | Outlook | blinks amber on unread | activate Outlook |
 | 4 | Teams | blinks amber on unread | activate Teams |
+| 5 | Proton Mail | blinks amber on unread | activate Proton Mail |
 | 8 | rescan | always dim | clear the board and re-poll |
+
+Each app tile has its own hue — white, green-cyan, blue, purple, magenta — so
+the row reads at a glance instead of as five identical dots. A tile is dimmed
+to a fifth brightness while its app is not running.
 
 The round logo button reflects the most urgent state anywhere on the board.
 
@@ -128,14 +133,29 @@ uv run launchpad --quiet    # no stdout, for the launchd agent
 
 Quitting restores the device to Live mode and clears the grid.
 
+## Latency
+
+A pad press is handled in about 11 ms end to end. Two things get it there:
+
+* **Presses are read every 10 ms**, independently of the 400 ms board repaint,
+  so a press never waits for the next refresh tick.
+* **Focusing goes through iTerm2's websocket API**, held open on a background
+  thread (`iterm.py`), rather than shelling out. Measured: 1-5 ms against
+  ~175 ms for the equivalent `osascript` call, which is almost entirely process
+  startup. Enumerating tabs likewise drops from ~325 ms to ~3 ms. AppleScript
+  remains the fallback if the API is unreachable.
+
 ## Known limits
 
 * **ChatGPT and Codex are one app bundle.** Codex ships inside `ChatGPT.app` as
   a framework; there is no standalone Codex.app. Its Chromium `scripting.sdef`
   is a stub that reports zero windows even while the app is open, so neither
   tile can enumerate conversations. Codex *threads* are still tracked through
-  their rollout transcripts, and with Accessibility a press raises the window
-  whose title matches the thread. Codex CLI sessions in iTerm focus exactly.
+  their rollout transcripts, and labelled with the first thing you actually
+  typed in them. But ChatGPT.app runs a *single* window titled just "ChatGPT"
+  with threads inside it, so there is no per-thread window to raise: pressing a
+  Codex pad brings the app forward and no further. Codex CLI sessions in iTerm
+  focus their exact tab.
 * **Each zone holds 16 sessions.** Beyond that the zone's summary button blinks
   white and the extra sessions are not shown.
 * Sessions discovered only via iTerm carry glyph-derived state, which cannot

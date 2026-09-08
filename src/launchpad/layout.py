@@ -48,6 +48,18 @@ APP_TILES: dict[str, int] = {
     "app:codex": 92,
     "app:outlook": 93,
     "app:teams": 94,
+    "app:proton": 95,
+}
+
+# Each app tile gets its own hue so the top row is readable at a glance rather
+# than five identical dots. Values are the "app is running, nothing waiting"
+# colour; they are dimmed to a fifth when the app is not running.
+APP_COLOURS: dict[str, tuple[int, int, int]] = {
+    "app:chatgpt": (95, 95, 95),    # white
+    "app:codex": (0, 110, 85),      # green-cyan
+    "app:outlook": (0, 55, 127),    # blue
+    "app:teams": (95, 45, 127),     # purple
+    "app:proton": (115, 25, 95),    # magenta
 }
 RESCAN_PAD = 98
 
@@ -76,13 +88,14 @@ OFF = ("off",)
 def colour_for(session: Session) -> tuple:
     """Blink = needs you, breathe = busy, dim steady = idle."""
     if session.kind is Kind.APP:
+        red, green, blue = APP_COLOURS.get(session.key, (80, 80, 80))
         if session.badge > 0:
             return ("flash", _AMBER, 0)      # unread waiting for you
         if session.state is State.WORKING:
             return ("pulse", _BLUE)
         if session.state is State.IDLE:
-            return ("rgb", 20, 20, 24)       # app running
-        return _IDLE_RGB[Kind.APP]           # app not running: barely lit
+            return ("rgb", red, green, blue)          # app running
+        return ("rgb", red // 5, green // 5, blue // 5)  # not running: dimmed
     if session.state is State.WAITING:
         return ("flash", _AMBER, 0)          # hard blink: you are blocking it
     if session.state is State.ERROR:
