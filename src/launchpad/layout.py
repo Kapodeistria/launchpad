@@ -74,12 +74,15 @@ _ZONE_PALETTE = {
     Kind.CODEX_APP: _BLUE,
     Kind.SHELL: _WHITE,
 }
+# Idle pads were originally set around 8-24 out of 127, which is roughly 6-19%
+# brightness -- visible on a bench, invisible in a lit room. These are the same
+# hues at a level you can actually read across a desk.
 _IDLE_RGB = {
-    Kind.CLAUDE: ("rgb", 0, 24, 4),
-    Kind.CODEX_CLI: ("rgb", 0, 20, 22),
-    Kind.CODEX_APP: ("rgb", 0, 8, 30),
-    Kind.SHELL: ("rgb", 8, 8, 10),
-    Kind.APP: ("rgb", 6, 6, 8),
+    Kind.CLAUDE: ("rgb", 0, 95, 20),
+    Kind.CODEX_CLI: ("rgb", 0, 80, 90),
+    Kind.CODEX_APP: ("rgb", 10, 40, 120),
+    Kind.SHELL: ("rgb", 60, 60, 70),
+    Kind.APP: ("rgb", 40, 40, 45),
 }
 
 OFF = ("off",)

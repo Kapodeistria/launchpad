@@ -94,6 +94,26 @@ class Launchpad:
         self._flush([[_RGB, pad, 0, 0, 0] for pad in GRID + TOP_ROW + RIGHT_COL + [LOGO]])
 
     # -- input --------------------------------------------------------
+    def on_press(self, handler) -> None:
+        """Deliver presses via rtmidi's own callback thread.
+
+        Polling costs whatever the poll interval is; a callback fires the moment
+        the message arrives, which is what keeps a press inside single-digit
+        milliseconds. The handler must be quick or hand off to a worker, since
+        it runs on the MIDI thread.
+        """
+
+        def dispatch(msg) -> None:
+            pad = None
+            if msg.type == "note_on" and msg.velocity > 0:
+                pad = msg.note
+            elif msg.type == "control_change" and msg.value > 0:
+                pad = msg.control
+            if pad is not None:
+                handler(pad)
+
+        self._in.callback = dispatch
+
     def presses(self):
         """Yield pad numbers for press (not release) events."""
         for msg in self._in.iter_pending():
@@ -104,6 +124,7 @@ class Launchpad:
 
     def close(self) -> None:
         try:
+            self._in.callback = None
             self.clear()
             self.programmer_mode(False)
         finally:

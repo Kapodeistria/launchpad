@@ -1,7 +1,9 @@
 """Main loop: poll sources, light the board, act on presses."""
 from __future__ import annotations
 
+import queue
 import sys
+import threading
 import time
 
 from .apps import AppSource
@@ -16,7 +18,6 @@ from .sources import ClaudeSource, CodexSource, ItermSource, prune
 # (INPUT_INTERVAL) so a pad responds immediately rather than waiting for the
 # next refresh tick.
 POLL_INTERVAL = 0.4
-INPUT_INTERVAL = 0.01
 # Scanning iTerm and the apps shells out to osascript, so it runs on a slower
 # cadence than tailing the event log.
 SCAN_INTERVAL = 3.0
@@ -34,6 +35,9 @@ class Daemon:
         self.verbose = verbose
         self._last_scan = 0.0
         self._last_report = ""
+        # Presses arrive on the MIDI callback thread and are handed to a worker
+        # so a slow fallback path can never stall incoming input.
+        self._presses: queue.Queue[int] = queue.Queue()
 
     # -- state --------------------------------------------------------
     def refresh(self, force: bool = False) -> None:
@@ -95,10 +99,16 @@ class Daemon:
             self._open(pad, target)
 
     def _open(self, pad: int, session: Session) -> None:
+        started = time.perf_counter()
         ok = focus(session)
+        elapsed = (time.perf_counter() - started) * 1000
         if self.verbose:
             where = session.label or session.project or session.session_id[:8]
-            print(f"  -> pad {pad}: {'opened' if ok else 'could not open'} {where}", flush=True)
+            print(
+                f"  -> pad {pad}: {'opened' if ok else 'could not open'} "
+                f"{where}  [{elapsed:.1f} ms]",
+                flush=True,
+            )
 
     # -- loop ---------------------------------------------------------
     def run(self) -> None:
@@ -106,21 +116,33 @@ class Daemon:
         lp = Launchpad()
         lp.programmer_mode(True)
         lp.clear()
+
+        stopping = threading.Event()
+
+        def worker() -> None:
+            while not stopping.is_set():
+                try:
+                    pad = self._presses.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                try:
+                    self.handle(pad, lp)
+                except Exception as exc:  # noqa: BLE001 - one bad press must not end the loop
+                    print(f"  !! press {pad}: {exc!r}", flush=True)
+
+        threading.Thread(target=worker, daemon=True, name="press-worker").start()
+        lp.on_press(self._presses.put)
+
         print("launchpad: watching Claude, Codex, terminals and apps. Ctrl-C to stop.", flush=True)
         try:
-            last_paint = 0.0
             while True:
-                now = time.time()
-                if now - last_paint >= POLL_INTERVAL:
-                    last_paint = now
-                    self.refresh()
-                    self.render(lp)
-                for pad in lp.presses():
-                    self.handle(pad, lp)
-                time.sleep(INPUT_INTERVAL)
+                self.refresh()
+                self.render(lp)
+                time.sleep(POLL_INTERVAL)
         except KeyboardInterrupt:
             print("\nlaunchpad: stopping", flush=True)
         finally:
+            stopping.set()
             lp.close()
 
 

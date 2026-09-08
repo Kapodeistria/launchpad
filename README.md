@@ -135,10 +135,12 @@ Quitting restores the device to Live mode and clears the grid.
 
 ## Latency
 
-A pad press is handled in about 11 ms end to end. Two things get it there:
+A pad press is handled in single-digit milliseconds -- measured median 3.2 ms,
+min 0.6 ms. Two things get it there:
 
-* **Presses are read every 10 ms**, independently of the 400 ms board repaint,
-  so a press never waits for the next refresh tick.
+* **Presses arrive on rtmidi's callback thread**, not by polling, so there is no
+  poll interval to wait out at all. The callback only enqueues; a worker thread
+  does the work, so a slow fallback path can never stall incoming input.
 * **Focusing goes through iTerm2's websocket API**, held open on a background
   thread (`iterm.py`), rather than shelling out. Measured: 1-5 ms against
   ~175 ms for the equivalent `osascript` call, which is almost entirely process
