@@ -84,6 +84,15 @@ def test_overflow_is_flagged_rather_than_silently_dropped():
     assert summary_colour(Kind.CLAUDE, list(mapping.values()), True)[0] == "flash"
 
 
+def test_claude_is_coral_and_stays_distinct_from_the_alert_colour():
+    from launchpad.layout import _AMBER, _ZONE_PALETTE
+
+    _, red, green, blue = colour_for(make("a", Kind.CLAUDE, State.IDLE))
+    assert red > green > blue, "Claude should read as its brand coral"
+    # Breathing Claude must not share a hue with the blocked-on-you blink.
+    assert _ZONE_PALETTE[Kind.CLAUDE] != _AMBER
+
+
 def test_colour_expresses_urgency():
     waiting = make("a", Kind.CLAUDE, State.WAITING)
     working = make("b", Kind.CLAUDE, State.WORKING)

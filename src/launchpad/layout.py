@@ -71,10 +71,13 @@ RESCAN_PAD = 19
 # -- colours ----------------------------------------------------------------
 
 # Palette indices, used by the hardware's own flash/pulse animations.
-_GREEN, _CYAN, _BLUE, _AMBER, _RED, _WHITE = 21, 37, 45, 9, 5, 3
+# Palette indices. _CORAL (4, light red) is Claude's brand coral at palette
+# resolution; it is deliberately not _AMBER, because amber is the "blocked on
+# you" blink and a breathing Claude must not share a hue with it.
+_CORAL, _GREEN, _CYAN, _BLUE, _AMBER, _RED, _WHITE = 4, 21, 37, 45, 9, 5, 3
 
 _ZONE_PALETTE = {
-    Kind.CLAUDE: _GREEN,
+    Kind.CLAUDE: _CORAL,
     Kind.CODEX_CLI: _CYAN,
     Kind.CODEX_APP: _BLUE,
     Kind.SHELL: _WHITE,
@@ -83,7 +86,7 @@ _ZONE_PALETTE = {
 # brightness -- visible on a bench, invisible in a lit room. These are the same
 # hues at a level you can actually read across a desk.
 _IDLE_RGB = {
-    Kind.CLAUDE: ("rgb", 0, 95, 20),
+    Kind.CLAUDE: ("rgb", 127, 70, 51),   # Claude coral #D97757
     Kind.CODEX_CLI: ("rgb", 0, 80, 90),
     Kind.CODEX_APP: ("rgb", 10, 40, 120),
     Kind.SHELL: ("rgb", 60, 60, 70),

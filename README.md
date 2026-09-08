@@ -9,7 +9,7 @@ straight to that session's terminal tab.
 
 ```
       ┌────────────────────────────┐
-   8  │ C   C   C   C   C   C   C  │  ◄ Claude (iTerm)      green   [●] 89
+   8  │ C   C   C   C   C   C   C  │  ◄ Claude (iTerm)      coral   [●] 89
    7  │ C   C   C   C   C   C   C  │                                [●] 79
       ├────────────────────────────┤
    6  │ x   x   x   x   x   x   x  │  ◄ Codex CLI (iTerm)   cyan    [●] 69
@@ -62,7 +62,12 @@ The round logo button reflects the most urgent state anywhere on the board.
 | blinking red  | error   | last turn failed                                |
 | dark          | —       | nothing on that pad                             |
 
-Green = Claude Code, cyan = Codex CLI, blue = Codex app, white = plain terminal.
+Coral = Claude Code (its brand `#D97757`), cyan = Codex CLI, blue = Codex app,
+white = plain terminal.
+
+Claude's breathing colour is deliberately coral rather than plain orange: amber
+is the "blocked on you" blink, and a busy Claude must not share a hue with the
+one signal that means you are holding it up.
 
 For a tab with no agent in it, *working* means a foreground job is running:
 something other than the shell itself owns the tty's foreground process group.
