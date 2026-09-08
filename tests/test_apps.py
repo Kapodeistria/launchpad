@@ -33,7 +33,8 @@ def test_tiles_are_built_for_every_app(monkeypatch):
     apps.AppSource().poll(sessions)
 
     assert set(sessions) == {
-        "app:chatgpt", "app:codex", "app:outlook", "app:teams", "app:proton",
+        "app:claude", "app:chatgpt", "app:codex",
+        "app:outlook", "app:teams", "app:proton",
     }
     assert all(s.kind is Kind.APP for s in sessions.values())
     assert sessions["app:teams"].badge == 4

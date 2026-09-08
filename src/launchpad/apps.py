@@ -23,6 +23,7 @@ import subprocess
 from .focus import _osascript
 from .model import Kind, Session, State
 
+CLAUDE_APP = "Claude"
 CHATGPT_APP = "ChatGPT"
 OUTLOOK_APP = "Microsoft Outlook"
 TEAMS_APP = "Microsoft Teams"
@@ -46,7 +47,7 @@ def running_apps() -> set[str]:
     except (subprocess.SubprocessError, OSError):
         return set()
     found = set()
-    for name in (CHATGPT_APP, OUTLOOK_APP, TEAMS_APP, PROTON_APP):
+    for name in (CLAUDE_APP, CHATGPT_APP, OUTLOOK_APP, TEAMS_APP, PROTON_APP):
         if f"/{name}.app/Contents/MacOS/" in out:
             found.add(name)
     return found
@@ -106,6 +107,12 @@ class AppSource:
             sess.bundle = bundle
             sess.seen = sess.last_event if sess.badge else sess.seen
             return sess
+
+        # The Claude desktop app, distinct from the Claude Code sessions that
+        # fill the top of the grid.
+        claude = tile("app:claude", "Claude", CLAUDE_APP)
+        claude.badge = badges.get(CLAUDE_APP, 0)
+        claude.state = State.IDLE if CLAUDE_APP in running else State.ERROR
 
         # ChatGPT: no conversation list is reachable, but it does carry a Dock
         # badge, so the tile at least shows how much is waiting there.

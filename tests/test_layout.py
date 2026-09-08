@@ -28,7 +28,7 @@ def test_zones_and_the_app_row_do_not_overlap():
 
 
 def test_the_app_row_is_the_bottom_row():
-    assert sorted(APP_TILES.values()) == [11, 12, 13, 14, 15]
+    assert sorted(APP_TILES.values()) == [11, 12, 13, 14, 15, 16]
 
 
 def test_adjacent_app_tiles_are_visibly_different():
@@ -84,13 +84,21 @@ def test_overflow_is_flagged_rather_than_silently_dropped():
     assert summary_colour(Kind.CLAUDE, list(mapping.values()), True)[0] == "flash"
 
 
-def test_claude_is_coral_and_stays_distinct_from_the_alert_colour():
-    from launchpad.layout import _AMBER, _ZONE_PALETTE
-
+def test_claude_is_a_strong_orange():
     _, red, green, blue = colour_for(make("a", Kind.CLAUDE, State.IDLE))
-    assert red > green > blue, "Claude should read as its brand coral"
-    # Breathing Claude must not share a hue with the blocked-on-you blink.
-    assert _ZONE_PALETTE[Kind.CLAUDE] != _AMBER
+    assert red == 127, "orange needs full red to look strong"
+    assert blue == 0, "any blue washes orange toward pink"
+    assert 0 < green < red, "some green, or it is just red"
+
+
+def test_blocked_on_you_cannot_be_confused_with_any_zone_colour():
+    # Every zone breathes in its own palette colour; the alert blink must not
+    # reuse any of them, or an urgent pad hides among ordinary busy ones.
+    from launchpad.layout import _ZONE_PALETTE
+
+    alert = colour_for(make("a", Kind.CLAUDE, State.WAITING))
+    assert alert[0] == "flash"
+    assert alert[1] not in _ZONE_PALETTE.values()
 
 
 def test_colour_expresses_urgency():

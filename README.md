@@ -9,7 +9,7 @@ straight to that session's terminal tab.
 
 ```
       ┌────────────────────────────┐
-   8  │ C   C   C   C   C   C   C  │  ◄ Claude (iTerm)      coral   [●] 89
+   8  │ C   C   C   C   C   C   C  │  ◄ Claude (iTerm)      orange  [●] 89
    7  │ C   C   C   C   C   C   C  │                                [●] 79
       ├────────────────────────────┤
    6  │ x   x   x   x   x   x   x  │  ◄ Codex CLI (iTerm)   cyan    [●] 69
@@ -20,7 +20,7 @@ straight to that session's terminal tab.
       ├────────────────────────────┤
    2  │ .   .   .   .   .   .   .  │  ◄ other terminals     white   [●] 29
       ├────────────────────────────┤
-   1  │GPT CDX OUT TMS PRO         │  ◄ app launchers               [⟳] 19
+   1  │CLA GPT CDX OUT TMS PRO     │  ◄ app launchers               [⟳] 19
       └────────────────────────────┘
 ```
 
@@ -37,11 +37,15 @@ The **bottom row** carries one launcher per app, each in its own brand colour:
 
 | Pad | App | Colour | Lit when |
 |-----|-----|--------|----------|
-| 1 | ChatGPT | OpenAI green `#10A37F` | blinks amber on its Dock badge |
-| 2 | Codex | white `#FFFFFF` | breathes while any Codex thread works |
-| 3 | Outlook | Microsoft blue `#0078D4` | blinks amber on unread |
-| 4 | Teams | Teams indigo `#6264A7` | blinks amber on unread |
-| 5 | Proton Mail | Proton violet `#6D4AFF` | blinks amber on unread |
+| 1 | Claude | Claude orange | blinks amber on its Dock badge |
+| 2 | ChatGPT | OpenAI green `#10A37F` | blinks amber on its Dock badge |
+| 3 | Codex | white `#FFFFFF` | breathes while any Codex thread works |
+| 4 | Outlook | Microsoft blue `#0078D4` | blinks amber on unread |
+| 5 | Teams | Teams indigo `#6264A7` | blinks amber on unread |
+| 6 | Proton Mail | Proton violet `#6D4AFF` | blinks amber on unread |
+
+The Claude tile is the desktop app, distinct from the Claude Code sessions
+filling the top of the grid.
 
 Brand hexes are rescaled into the device's 0-127 range with the brightest
 channel pushed to full, so they read across a desk. Outlook, Teams and Proton
@@ -57,17 +61,22 @@ The round logo button reflects the most urgent state anywhere on the board.
 | Look          | State   | Meaning                                        |
 |---------------|---------|------------------------------------------------|
 | breathing     | working | the agent is actively processing                |
-| blinking amber| waiting | blocked on you — permission prompt, or unread   |
+| blinking white| waiting | blocked on you — a permission prompt or question |
+| blinking amber| unread  | an app tile has unread mail or messages         |
 | dim steady    | idle    | session alive, waiting for your next prompt     |
 | blinking red  | error   | last turn failed                                |
 | dark          | —       | nothing on that pad                             |
 
-Coral = Claude Code (its brand `#D97757`), cyan = Codex CLI, blue = Codex app,
-white = plain terminal.
+Orange = Claude Code, cyan = Codex CLI, blue = Codex app, grey = plain terminal.
 
-Claude's breathing colour is deliberately coral rather than plain orange: amber
-is the "blocked on you" blink, and a busy Claude must not share a hue with the
-one signal that means you are holding it up.
+Claude's orange runs full red with **no blue at all**: any blue washes an orange
+toward pink, which is what made the literal brand hex read as muted salmon on
+the LEDs.
+
+Because Claude's zone is orange, *blocked on you* blinks **white** rather than
+amber — an urgent pad has to stand out among orange ones. White in turn forced
+the plain-terminal zone off white and onto grey. A test asserts the alert colour
+is never any zone's colour, so this cannot quietly regress.
 
 For a tab with no agent in it, *working* means a foreground job is running:
 something other than the shell itself owns the tty's foreground process group.

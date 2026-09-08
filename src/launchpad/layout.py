@@ -46,11 +46,12 @@ ZONE_SUMMARY: dict[Kind, list[int]] = {
 # App launchers occupy the bottom row of the grid, where they are under your
 # thumb, rather than the round buttons along the top.
 APP_TILES: dict[str, int] = {
-    "app:chatgpt": 11,
-    "app:codex": 12,
-    "app:outlook": 13,
-    "app:teams": 14,
-    "app:proton": 15,
+    "app:claude": 11,
+    "app:chatgpt": 12,
+    "app:codex": 13,
+    "app:outlook": 14,
+    "app:teams": 15,
+    "app:proton": 16,
 }
 
 # Each app tile carries its own brand colour, taken from the product's own
@@ -59,6 +60,7 @@ APP_TILES: dict[str, int] = {
 # and Proton really are three neighbouring blues in life, so they are ordered
 # to put the greatest hue distance between adjacent pads.
 APP_COLOURS: dict[str, tuple[int, int, int]] = {
+    "app:claude": (127, 48, 0),     # Claude orange  #D97757
     "app:chatgpt": (12, 120, 93),   # OpenAI green   #10A37F
     "app:codex": (110, 110, 110),   # Codex white    #FFFFFF
     "app:outlook": (0, 72, 127),    # Outlook blue   #0078D4
@@ -71,22 +73,25 @@ RESCAN_PAD = 19
 # -- colours ----------------------------------------------------------------
 
 # Palette indices, used by the hardware's own flash/pulse animations.
-# Palette indices. _CORAL (4, light red) is Claude's brand coral at palette
-# resolution; it is deliberately not _AMBER, because amber is the "blocked on
-# you" blink and a breathing Claude must not share a hue with it.
-_CORAL, _GREEN, _CYAN, _BLUE, _AMBER, _RED, _WHITE = 4, 21, 37, 45, 9, 5, 3
+# Palette indices.
+_ORANGE, _GREEN, _CYAN, _BLUE, _AMBER = 9, 21, 37, 45, 9
+_RED, _WHITE, _MAGENTA, _GREY = 5, 3, 53, 2
 
 _ZONE_PALETTE = {
-    Kind.CLAUDE: _CORAL,
+    Kind.CLAUDE: _ORANGE,
     Kind.CODEX_CLI: _CYAN,
     Kind.CODEX_APP: _BLUE,
-    Kind.SHELL: _WHITE,
+    # Grey, not white: white is reserved for the blocked-on-you blink, and a
+    # busy shell must not be able to hide an urgent session.
+    Kind.SHELL: _GREY,
 }
 # Idle pads were originally set around 8-24 out of 127, which is roughly 6-19%
 # brightness -- visible on a bench, invisible in a lit room. These are the same
 # hues at a level you can actually read across a desk.
 _IDLE_RGB = {
-    Kind.CLAUDE: ("rgb", 127, 70, 51),   # Claude coral #D97757
+    # Full red, no blue at all: any blue washes an orange toward pink and is
+    # what made the literal brand hex read as muted salmon on the LEDs.
+    Kind.CLAUDE: ("rgb", 127, 48, 0),
     Kind.CODEX_CLI: ("rgb", 0, 80, 90),
     Kind.CODEX_APP: ("rgb", 10, 40, 120),
     Kind.SHELL: ("rgb", 60, 60, 70),
@@ -108,7 +113,10 @@ def colour_for(session: Session) -> tuple:
             return ("rgb", red, green, blue)          # app running
         return ("rgb", red // 5, green // 5, blue // 5)  # not running: dimmed
     if session.state is State.WAITING:
-        return ("flash", _AMBER, 0)          # hard blink: you are blocking it
+        # White, not amber: Claude's zone is orange now, and a session blocked
+        # on you has to stand out *among* orange pads. A white blink is the one
+        # thing no zone colour can be confused with.
+        return ("flash", _WHITE, 0)          # hard blink: you are blocking it
     if session.state is State.ERROR:
         return ("flash", _RED, 0)
     if session.state is State.WORKING:
@@ -121,9 +129,9 @@ def summary_colour(kind: Kind, members: list[Session], overflowed: bool) -> tupl
     if not members:
         return OFF
     if any(s.state is State.WAITING for s in members):
-        return ("flash", _AMBER, 0)
+        return ("flash", _WHITE, 0)
     if overflowed:
-        return ("flash", _WHITE, 0)          # more sessions than pads
+        return ("flash", _MAGENTA, 0)        # more sessions than pads
     if any(s.state is State.WORKING for s in members):
         return ("pulse", _ZONE_PALETTE[kind])
     return _IDLE_RGB[kind]
