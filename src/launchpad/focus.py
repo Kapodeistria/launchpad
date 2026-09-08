@@ -47,10 +47,11 @@ def focus(session: Session) -> bool:
         if _osascript(_FOCUS_ITERM % session.iterm_uuid) == "ok":
             return True
     if session.kind is Kind.CODEX_APP:
-        # Codex Desktop exposes no per-thread deep link. With Accessibility we
-        # can at least raise the window whose title matches the thread; without
-        # it we can only bring the app forward.
-        return raise_window("ChatGPT", session.label) or activate("ChatGPT")
+        # Codex Desktop exposes no per-thread deep link, and ChatGPT.app runs a
+        # single window titled just "ChatGPT" -- so matching a thread label
+        # against window titles can never succeed. It only cost ~320 ms of
+        # AppleScript before failing, so go straight to activating the app.
+        return activate("ChatGPT")
     if session.kind is Kind.APP and session.bundle:
         return activate(session.bundle)
     return False
