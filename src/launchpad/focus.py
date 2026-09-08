@@ -48,24 +48,36 @@ def focus(session: Session) -> bool:
     return False
 
 
-def iterm_titles() -> dict[str, str]:
-    """Map iTerm session UUID -> tab title, used to label pads."""
-    out = _osascript(
+def iterm_sessions() -> dict[str, tuple[str, str]]:
+    """Map iTerm session UUID -> (tty, tab title).
+
+    The tty is what lets us match a tab to the `claude`/`codex` process running
+    inside it, so sessions can be discovered without waiting for a hook.
+    """
+    # Note: AppleScript's `tab` constant cannot be used here -- iTerm's own
+    # dictionary defines a `tab` class that shadows it -- hence a literal
+    # separator string.
+    script = (
         'tell application "iTerm2"\n'
         '  set r to ""\n'
-        "  repeat with w in windows\n"
-        "    repeat with t in tabs of w\n"
-        "      repeat with s in sessions of t\n"
-        '        set r to r & (id of s) & "\t" & (name of s) & linefeed\n'
-        "      end repeat\n"
-        "    end repeat\n"
-        "  end repeat\n"
-        "  return r\n"
-        "end tell"
+        '  repeat with w in windows\n'
+        '    repeat with t in tabs of w\n'
+        '      repeat with s in sessions of t\n'
+        '        set r to r & (id of s) & "|#|" & (tty of s) & "|#|" & (name of s) & linefeed\n'
+        '      end repeat\n'
+        '    end repeat\n'
+        '  end repeat\n'
+        '  return r\n'
+        'end tell'
     )
-    titles = {}
-    for line in out.splitlines():
-        if "\t" in line:
-            uuid, _, name = line.partition("\t")
-            titles[uuid.strip()] = name.strip()
-    return titles
+    found = {}
+    for line in _osascript(script).splitlines():
+        parts = line.split("|#|")
+        if len(parts) >= 3:
+            found[parts[0].strip()] = (parts[1].strip(), parts[2].strip())
+    return found
+
+
+def iterm_titles() -> dict[str, str]:
+    """Map iTerm session UUID -> tab title."""
+    return {u: name for u, (_tty, name) in iterm_sessions().items()}

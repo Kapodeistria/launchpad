@@ -44,6 +44,13 @@ The two tools expose state differently, so there are two sources:
   `CLAUDE_CODE_SESSION_ID` and `ITERM_SESSION_ID` — that pairing is what lets a
   pad press focus the correct terminal tab. The hook costs ~6 ms and always
   exits 0, so it cannot stall or fail a session.
+* **Any agent CLI in an iTerm tab** is also discovered without hooks:
+  `ItermSource` asks iTerm for each tab's `tty` and matches it against the
+  `claude` / `codex` processes in `ps`. This is what makes sessions that predate
+  the hook install show up immediately. State comes from the glyph Claude Code
+  puts at the front of the tab title (a filled-circle spinner means working, an
+  asterisk means idle). When the same session later reports through a hook, the
+  hook entry wins, since it carries exact state.
 * **Codex** has no hooks, so `CodexSource` tails the rollout transcripts under
   `~/.codex/sessions/YYYY/MM/DD/` and reads the `task_started` / `task_complete`
   events Codex already writes. Only new bytes are read on each poll. Subagent
@@ -76,7 +83,10 @@ Quitting restores the device to Live mode and clears the grid.
   a `codex://` URL scheme but exposes no documented per-thread deep link, so a
   press raises the app and leaves you on whatever thread it has open. Codex CLI
   sessions running in iTerm focus their tab correctly.
-* A Claude session started *before* the hooks were installed appears only once
-  it next fires an event.
+* Sessions discovered only via iTerm carry glyph-derived state, which cannot
+  distinguish "waiting on you" from "idle". They upgrade to exact state as soon
+  as they fire their first hook.
+* Only iTerm is supported for discovery and focus; other terminals would need
+  their own equivalent of the `tty` lookup.
 * Sessions silent for more than 3 hours drop off the grid (`DEFAULT_TTL`).
 * Each bank holds 32 sessions; beyond that, extra sessions are not shown.

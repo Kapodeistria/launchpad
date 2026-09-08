@@ -204,3 +204,103 @@ def prune(sessions: dict[str, Session], ttl: int = DEFAULT_TTL) -> None:
     cutoff = time.time() - ttl
     for key in [k for k, s in sessions.items() if s.seen < cutoff]:
         del sessions[key]
+
+
+# Claude Code puts a state glyph at the front of the iTerm tab title: a filled
+# circle spinner while it is working, an asterisk when it is idle and ready.
+_BUSY_GLYPHS = set("◐◑◒◓⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+_IDLE_GLYPHS = set("✳✻✽✢·")
+_ALL_GLYPHS = _BUSY_GLYPHS | _IDLE_GLYPHS
+
+
+def _tty_processes() -> dict[str, str]:
+    """Map '/dev/ttysNNN' -> command name, for agent CLIs only."""
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["ps", "-axo", "tty=,command="],
+            capture_output=True, text=True, timeout=5, check=False,
+        ).stdout
+    except (subprocess.SubprocessError, OSError):
+        return {}
+    found = {}
+    for line in out.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) != 2 or parts[0] == "??":
+            continue
+        tty, command = parts
+        name = command.split()[0].rsplit("/", 1)[-1]
+        if name in ("claude", "codex"):
+            found[f"/dev/{tty}"] = name
+    return found
+
+
+class ItermSource:
+    """Finds agent CLIs running in iTerm tabs, without needing hooks.
+
+    This is what makes sessions that predate the hook install -- or that simply
+    have not fired an event yet -- show up on the grid immediately. Sessions
+    discovered here are keyed by iTerm UUID; once the same session reports
+    through a hook, `Daemon` prefers the hook entry, which carries exact state.
+    """
+
+    def poll(self, sessions: dict[str, Session]) -> None:
+        from .focus import iterm_sessions
+
+        tabs = iterm_sessions()
+        if not tabs:
+            return  # iTerm not running, or Automation permission not granted
+        procs = _tty_processes()
+
+        # Sessions that reported through a hook already own their tab: refresh
+        # their label from the tab title, and retire them if the tab has gone.
+        claimed = set()
+        for key, sess in list(sessions.items()):
+            if key.startswith("iterm:") or not sess.iterm_uuid:
+                continue
+            tab = tabs.get(sess.iterm_uuid)
+            if tab is None:
+                del sessions[key]
+                continue
+            claimed.add(sess.iterm_uuid)
+            sessions.pop(f"iterm:{sess.iterm_uuid}", None)
+            sess.label = self._clean(tab[1])
+
+        # Anything else running an agent CLI is discovered here.
+        live = set()
+        for uuid, (tty, title) in tabs.items():
+            command = procs.get(tty)
+            if command is None or uuid in claimed:
+                continue
+            key = f"iterm:{uuid}"
+            live.add(key)
+            sess = sessions.get(key)
+            if sess is None:
+                sess = Session(
+                    key=key,
+                    kind=Kind.CLAUDE if command == "claude" else Kind.CODEX_CLI,
+                    session_id=uuid,
+                    iterm_uuid=uuid,
+                )
+                sessions[key] = sess
+            sess.label = self._clean(title)
+            sess.touch(self._state_from(title))
+            sess.seen = time.time()
+
+        # Drop discovered sessions whose tab closed or whose CLI exited.
+        for key in [k for k in sessions if k.startswith("iterm:") and k not in live]:
+            del sessions[key]
+
+    @staticmethod
+    def _clean(title: str) -> str:
+        return title.lstrip("".join(_ALL_GLYPHS) + " ").strip() or title
+
+    @staticmethod
+    def _state_from(title: str) -> State | None:
+        glyph = title[:1]
+        if glyph in _BUSY_GLYPHS:
+            return State.WORKING
+        if glyph in _IDLE_GLYPHS:
+            return State.IDLE
+        return None

@@ -8,7 +8,7 @@ from .device import LOGO, Launchpad
 from .focus import focus, iterm_titles
 from .layout import Layout
 from .model import Kind, Session, State
-from .sources import ClaudeSource, CodexSource, prune
+from .sources import ClaudeSource, CodexSource, ItermSource, prune
 
 POLL_INTERVAL = 0.4
 TITLE_INTERVAL = 3.0
@@ -19,6 +19,7 @@ class Daemon:
         self.sessions: dict[str, Session] = {}
         self.claude = ClaudeSource()
         self.codex = CodexSource()
+        self.iterm = ItermSource()
         self.layout = Layout()
         self.pad_map: dict[int, Session] = {}
         self.verbose = verbose
@@ -29,27 +30,16 @@ class Daemon:
     def refresh(self) -> None:
         self.claude.poll(self.sessions)
         self.codex.poll(self.sessions)
-        prune(self.sessions)
 
+        # Scanning iTerm shells out to osascript, so do it on a slower cadence
+        # than the log tailing. It both discovers hook-less sessions and keeps
+        # labels fresh.
         now = time.time()
         if now - self._last_titles > TITLE_INTERVAL:
             self._last_titles = now
-            self._apply_titles()
+            self.iterm.poll(self.sessions)
 
-    def _apply_titles(self) -> None:
-        """Label Claude pads from their iTerm tab titles, and drop sessions
-        whose terminal tab has closed without firing SessionEnd."""
-        titles = iterm_titles()
-        if not titles:
-            return
-        for key, sess in list(self.sessions.items()):
-            if sess.kind is not Kind.CLAUDE or not sess.iterm_uuid:
-                continue
-            title = titles.get(sess.iterm_uuid)
-            if title is None:
-                del self.sessions[key]  # tab is gone
-            else:
-                sess.label = title.lstrip("◐◑◒◓✳ ").strip() or sess.project
+        prune(self.sessions)
 
     # -- output -------------------------------------------------------
     def render(self, lp: Launchpad) -> None:
