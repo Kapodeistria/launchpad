@@ -142,10 +142,20 @@ min 0.6 ms. Two things get it there:
   poll interval to wait out at all. The callback only enqueues; a worker thread
   does the work, so a slow fallback path can never stall incoming input.
 * **Focusing goes through iTerm2's websocket API**, held open on a background
-  thread (`iterm.py`), rather than shelling out. Measured: 1-5 ms against
+  thread (`iterm.py`), rather than shelling out. Measured median 4.9 ms against
   ~175 ms for the equivalent `osascript` call, which is almost entirely process
   startup. Enumerating tabs likewise drops from ~325 ms to ~3 ms. AppleScript
   remains the fallback if the API is unreachable.
+
+Focusing a tab takes *two* API calls, not one: `Session.async_activate` only
+orders things within iTerm — it selects the tab and raises its window, but
+leaves iTerm behind whatever app you are actually looking at. `App.async_activate`
+is what brings iTerm forward. Without the second call a press appears to do
+nothing whenever iTerm is not already frontmost.
+
+App tiles use `open -a` (~63 ms) rather than AppleScript (~99 ms). Both are far
+slower than the websocket path, but there is no equivalent persistent channel
+for arbitrary applications.
 
 ## Tests
 

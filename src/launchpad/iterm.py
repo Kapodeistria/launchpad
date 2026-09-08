@@ -88,13 +88,20 @@ class ItermBridge:
         return self._submit(gather())
 
     def focus(self, uuid: str) -> bool:
-        """Select a session and bring its window forward."""
+        """Select a session, raise its window, and bring iTerm to the front.
+
+        `Session.async_activate` only orders things *within* iTerm -- it selects
+        the tab and raises its window, but leaves iTerm behind whatever app you
+        are actually looking at. Activating the app is a separate call, and
+        without it a press does nothing visible unless iTerm already has focus.
+        """
 
         async def go() -> bool:
             session = self._app.get_session_by_id(uuid)
             if session is None:
                 return False
             await session.async_activate(select_tab=True, order_window_front=True)
+            await self._app.async_activate(raise_all_windows=False)
             return True
 
         return bool(self._submit(go()))

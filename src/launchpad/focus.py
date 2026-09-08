@@ -96,7 +96,21 @@ def iterm_titles() -> dict[str, str]:
 
 
 def activate(app: str) -> bool:
-    """Bring an application to the front by name."""
+    """Bring an application to the front by name.
+
+    `open -a` measures ~63 ms against ~99 ms for the equivalent AppleScript,
+    almost all of which is osascript's startup, so it is worth preferring even
+    though both are far slower than the iTerm websocket path.
+    """
+    try:
+        done = subprocess.run(
+            ["/usr/bin/open", "-a", app],
+            capture_output=True, timeout=5, check=False,
+        )
+        if done.returncode == 0:
+            return True
+    except (subprocess.SubprocessError, OSError):
+        pass
     return _osascript(f'tell application "{app}" to activate\nreturn "ok"') == "ok"
 
 
