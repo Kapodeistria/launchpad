@@ -82,8 +82,7 @@ class Daemon:
         if pad == RESCAN_PAD:
             lp.clear()
             self.refresh(force=True)
-            if self.verbose:
-                print("  -> rescan", flush=True)
+            print("  -> rescan", flush=True)
             return
 
         # A zone summary button focuses that zone's most recently active session.
@@ -95,20 +94,23 @@ class Daemon:
                 return
 
         target = self.pad_map.get(pad)
-        if target is not None:
-            self._open(pad, target)
+        if target is None:
+            print(f"  -> pad {pad}: nothing assigned ({len(self.pad_map)} tiles known)", flush=True)
+            return
+        self._open(pad, target)
 
     def _open(self, pad: int, session: Session) -> None:
         started = time.perf_counter()
         ok = focus(session)
         elapsed = (time.perf_counter() - started) * 1000
-        if self.verbose:
-            where = session.label or session.project or session.session_id[:8]
-            print(
-                f"  -> pad {pad}: {'opened' if ok else 'could not open'} "
-                f"{where}  [{elapsed:.1f} ms]",
-                flush=True,
-            )
+        where = session.label or session.project or session.session_id[:8]
+        print(
+            f"  -> pad {pad}: {'opened' if ok else 'COULD NOT OPEN'} "
+            f"{session.kind.value} {where!r} "
+            f"iterm={session.iterm_uuid or '-'} bridge={BRIDGE.available} "
+            f"[{elapsed:.1f} ms]",
+            flush=True,
+        )
 
     # -- loop ---------------------------------------------------------
     def run(self) -> None:

@@ -10,6 +10,8 @@ bottom-left and 88 is top-right. The surrounding round buttons are CCs:
 """
 from __future__ import annotations
 
+import threading
+
 import mido
 
 HEADER = [0x00, 0x20, 0x29, 0x02, 0x0D]
@@ -40,6 +42,8 @@ class Launchpad:
         self._out = mido.open_output(out_port)
         self._in = mido.open_input(in_port)
         self._shadow: dict[int, tuple] = {}
+        self._closing = False
+        self._reader: threading.Thread | None = None
 
     # -- low level ----------------------------------------------------
     def _sysex(self, *data: int) -> None:
@@ -95,24 +99,40 @@ class Launchpad:
 
     # -- input --------------------------------------------------------
     def on_press(self, handler) -> None:
-        """Deliver presses via rtmidi's own callback thread.
+        """Call `handler(pad)` the moment a pad is pressed.
 
-        Polling costs whatever the poll interval is; a callback fires the moment
-        the message arrives, which is what keeps a press inside single-digit
-        milliseconds. The handler must be quick or hand off to a worker, since
-        it runs on the MIDI thread.
+        A dedicated thread blocks in `receive()` rather than polling, so there
+        is no poll interval to wait out and a press lands in well under a
+        millisecond. A blocking reader is used in preference to mido's
+        `callback` property because the reader is plain, observable code: if it
+        stops delivering, the thread is visibly alive or dead, whereas a silent
+        callback gives nothing to inspect.
+
+        The handler runs on the reader thread, so it must be quick or hand off
+        to a worker.
         """
 
-        def dispatch(msg) -> None:
-            pad = None
-            if msg.type == "note_on" and msg.velocity > 0:
-                pad = msg.note
-            elif msg.type == "control_change" and msg.value > 0:
-                pad = msg.control
-            if pad is not None:
-                handler(pad)
+        def reader() -> None:
+            while not self._closing:
+                try:
+                    msg = self._in.receive(block=True)
+                except Exception:  # noqa: BLE001 - port closed underneath us
+                    return
+                if msg is None:
+                    continue
+                pad = None
+                if msg.type == "note_on" and msg.velocity > 0:
+                    pad = msg.note
+                elif msg.type == "control_change" and msg.value > 0:
+                    pad = msg.control
+                if pad is not None:
+                    try:
+                        handler(pad)
+                    except Exception:  # noqa: BLE001 - never kill the reader
+                        pass
 
-        self._in.callback = dispatch
+        self._reader = threading.Thread(target=reader, daemon=True, name="midi-reader")
+        self._reader.start()
 
     def presses(self):
         """Yield pad numbers for press (not release) events."""
@@ -123,8 +143,8 @@ class Launchpad:
                 yield msg.control
 
     def close(self) -> None:
+        self._closing = True
         try:
-            self._in.callback = None
             self.clear()
             self.programmer_mode(False)
         finally:
