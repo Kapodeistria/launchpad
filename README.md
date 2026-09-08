@@ -38,7 +38,7 @@ The **top row** holds the things there is exactly one of:
 
 | Pad | Tile | Lit when | Press |
 |-----|------|----------|-------|
-| 1 | ChatGPT | app is running | activate ChatGPT |
+| 1 | ChatGPT | blinks amber on its Dock badge | activate ChatGPT |
 | 2 | Codex | breathes while any Codex thread works | raise the Codex window |
 | 3 | Outlook | blinks amber on unread | activate Outlook |
 | 4 | Teams | blinks amber on unread | activate Teams |
@@ -101,8 +101,11 @@ binary to grant — not Python, and not `uv`:
 > <kbd>⌘⇧G</kbd> → `/usr/bin/osascript` → Open → switch it on.
 
 Without it the board still runs: Outlook keeps its unread count through its own
-scripting dictionary, the Teams tile becomes a plain launcher, and the Codex
-tile raises the app rather than a specific window.
+scripting dictionary, the Teams and ChatGPT tiles become plain launchers, and
+the Codex tile raises the app rather than a specific window.
+
+Badge names are matched against the app's Dock name, so any badged app can be
+added as a tile by name -- `Proton Mail`, for instance.
 
 ## Install
 

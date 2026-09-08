@@ -106,9 +106,10 @@ class AppSource:
             sess.seen = sess.last_event if sess.badge else sess.seen
             return sess
 
-        # ChatGPT: launcher only, lit while the app is running.
+        # ChatGPT: no conversation list is reachable, but it does carry a Dock
+        # badge, so the tile at least shows how much is waiting there.
         chatgpt = tile("app:chatgpt", "ChatGPT", CHATGPT_APP)
-        chatgpt.touch(State.IDLE if CHATGPT_APP in running else State.ERROR)
+        chatgpt.badge = badges.get(CHATGPT_APP, 0)
         chatgpt.state = State.IDLE if CHATGPT_APP in running else State.ERROR
 
         # Codex: same bundle, but mirrors the rollout-transcript thread states.
