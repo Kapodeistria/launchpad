@@ -1,0 +1,206 @@
+"""Discover live agent sessions and their state.
+
+Two independent sources, because the two tools expose state differently:
+
+* Claude Code has a hook system, so we get exact lifecycle events pushed to an
+  append-only log -- including ITERM_SESSION_ID, which is what lets a pad press
+  focus the right terminal tab.
+* Codex has no hooks, so we tail its rollout transcripts and read the
+  `task_started` / `task_complete` events it already writes.
+"""
+from __future__ import annotations
+
+import json
+import os
+import time
+from pathlib import Path
+
+from .model import Kind, Session, State
+
+LAUNCHPAD_HOME = Path(os.environ.get("LAUNCHPAD_HOME", Path.home() / ".launchpad"))
+EVENTS_LOG = LAUNCHPAD_HOME / "events.log"
+CODEX_SESSIONS = Path.home() / ".codex" / "sessions"
+
+# A session disappears from the grid once it has been silent this long.
+DEFAULT_TTL = 3 * 3600
+
+# Claude hook event -> resulting state. Events not listed only refresh liveness.
+_CLAUDE_STATES = {
+    "SessionStart": State.IDLE,
+    "UserPromptSubmit": State.WORKING,
+    "PreToolUse": State.WORKING,
+    "PostToolUse": State.WORKING,
+    "Notification": State.WAITING,
+    "Stop": State.IDLE,
+    "SubagentStop": State.WORKING,
+}
+
+
+class ClaudeSource:
+    """Consumes the append-only hook event log."""
+
+    def __init__(self, path: Path = EVENTS_LOG) -> None:
+        self.path = path
+        self._offset = 0
+        self._inode: int | None = None
+
+    def poll(self, sessions: dict[str, Session]) -> None:
+        if not self.path.exists():
+            return
+        stat = self.path.stat()
+        # Handle truncation/rotation without replaying the whole history.
+        if self._inode != stat.st_ino or stat.st_size < self._offset:
+            self._inode, self._offset = stat.st_ino, 0
+        if stat.st_size == self._offset:
+            return
+        with self.path.open("rb") as fh:
+            fh.seek(self._offset)
+            data = fh.read()
+            self._offset = fh.tell()
+        for line in data.decode("utf-8", "replace").splitlines():
+            try:
+                self._apply(json.loads(line), sessions)
+            except (ValueError, KeyError, TypeError):
+                continue  # a torn or malformed line must not kill the daemon
+
+    @staticmethod
+    def _apply(evt: dict, sessions: dict[str, Session]) -> None:
+        sid = evt.get("sid") or ""
+        if not sid:
+            return
+        key = f"claude:{sid}"
+        payload = evt.get("payload") or {}
+        event = evt.get("event", "")
+
+        if event == "SessionEnd":
+            sessions.pop(key, None)
+            return
+
+        sess = sessions.get(key)
+        if sess is None:
+            sess = Session(key=key, kind=Kind.CLAUDE, session_id=sid)
+            sessions[key] = sess
+
+        iterm = evt.get("iterm") or ""
+        if iterm:
+            sess.iterm_uuid = iterm.split(":", 1)[-1]
+        if isinstance(payload, dict) and payload.get("cwd"):
+            sess.cwd = payload["cwd"]
+        sess.touch(_CLAUDE_STATES.get(event))
+        sess.seen = float(evt.get("ts") or time.time())
+
+
+class CodexSource:
+    """Tails Codex rollout transcripts under ~/.codex/sessions/YYYY/MM/DD/."""
+
+    def __init__(self, root: Path = CODEX_SESSIONS, ttl: int = DEFAULT_TTL) -> None:
+        self.root = root
+        self.ttl = ttl
+        self._offsets: dict[Path, int] = {}
+        self._meta: dict[Path, dict | None] = {}
+
+    def poll(self, sessions: dict[str, Session]) -> None:
+        cutoff = time.time() - self.ttl
+        for path in self._recent_rollouts(cutoff):
+            meta = self._meta_for(path)
+            if meta is None:
+                continue
+            sid = meta["session_id"]
+            key = f"codex:{sid}"
+            sess = sessions.get(key)
+            if sess is None:
+                sess = Session(
+                    key=key,
+                    kind=meta["kind"],
+                    session_id=sid,
+                    cwd=meta.get("cwd", ""),
+                    label=meta.get("label", ""),
+                )
+                sessions[key] = sess
+            state = self._scan_tail(path)
+            sess.touch(state)
+            sess.seen = path.stat().st_mtime
+
+    def _recent_rollouts(self, cutoff: float) -> list[Path]:
+        if not self.root.exists():
+            return []
+        found = []
+        # Only walk the last few day-directories rather than the whole archive.
+        for day_dir in sorted(self.root.glob("*/*/*"), reverse=True)[:4]:
+            for path in day_dir.glob("rollout-*.jsonl"):
+                try:
+                    if path.stat().st_mtime >= cutoff:
+                        found.append(path)
+                except OSError:
+                    continue
+        return found
+
+    def _meta_for(self, path: Path) -> dict | None:
+        """Parse (and cache) the session_meta header. None => skip this file."""
+        if path in self._meta:
+            return self._meta[path]
+        result = None
+        try:
+            with path.open("r", encoding="utf-8", errors="replace") as fh:
+                first = fh.readline()
+            payload = json.loads(first).get("payload", {})
+            source = payload.get("source")
+            # Subagent threads are spawned by a parent thread; showing them
+            # would flood the grid with pads you cannot meaningfully open.
+            is_subagent = isinstance(source, dict) and "subagent" in source
+            if not is_subagent and payload.get("session_id"):
+                originator = (payload.get("originator") or "").lower()
+                result = {
+                    "session_id": payload["session_id"],
+                    "cwd": payload.get("cwd", ""),
+                    "kind": Kind.CODEX_APP if "desktop" in originator else Kind.CODEX_CLI,
+                    "label": payload.get("originator") or "Codex",
+                }
+        except (OSError, ValueError, KeyError):
+            result = None
+        self._meta[path] = result
+        return result
+
+    def _scan_tail(self, path: Path) -> State | None:
+        """Read only bytes appended since last poll; return the implied state."""
+        try:
+            size = path.stat().st_size
+        except OSError:
+            return None
+        offset = self._offsets.get(path)
+        if offset is None:
+            # First sight of this file: look at the tail only, so a huge
+            # transcript does not stall startup.
+            offset = max(0, size - 65536)
+        if size < offset:
+            offset = 0  # file was replaced
+        if size == offset:
+            return None
+        try:
+            with path.open("rb") as fh:
+                fh.seek(offset)
+                data = fh.read()
+                self._offsets[path] = fh.tell()
+        except OSError:
+            return None
+
+        state = None
+        for line in data.decode("utf-8", "replace").splitlines():
+            if '"task_started"' not in line and '"task_complete"' not in line:
+                continue
+            try:
+                payload = json.loads(line).get("payload", {})
+            except ValueError:
+                continue
+            kind = payload.get("type")
+            if kind == "task_started":
+                state = State.WORKING
+            elif kind == "task_complete":
+                state = State.IDLE
+        return state
+
+
+def prune(sessions: dict[str, Session], ttl: int = DEFAULT_TTL) -> None:
+    cutoff = time.time() - ttl
+    for key in [k for k, s in sessions.items() if s.seen < cutoff]:
+        del sessions[key]
