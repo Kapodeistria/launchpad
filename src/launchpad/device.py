@@ -38,9 +38,17 @@ def note_for(row: int, col: int) -> int:
 class Launchpad:
     """Thin, synchronous wrapper around the two MIDI ports."""
 
-    def __init__(self, out_port: str = OUT_PORT, in_port: str = IN_PORT) -> None:
-        self._out = mido.open_output(out_port)
-        self._in = mido.open_input(in_port)
+    def __init__(
+        self,
+        out_port: str = OUT_PORT,
+        in_port: str = IN_PORT,
+        *,
+        out=None,
+        inp=None,
+    ) -> None:
+        # `out`/`inp` let tests drive the driver without a device attached.
+        self._out = out if out is not None else mido.open_output(out_port)
+        self._in = inp if inp is not None else mido.open_input(in_port)
         self._shadow: dict[int, tuple] = {}
         self._closing = False
         self._reader: threading.Thread | None = None

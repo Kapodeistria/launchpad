@@ -147,6 +147,18 @@ min 0.6 ms. Two things get it there:
   startup. Enumerating tabs likewise drops from ~325 ms to ~3 ms. AppleScript
   remains the fallback if the API is unreachable.
 
+## Tests
+
+```sh
+uv run pytest
+```
+
+32 tests, no hardware required — the MIDI ports are faked, so pad addressing,
+LED diffing, press dispatch, zone assignment and the source parsers are all
+checked without a Launchpad attached. Worth running before touching the driver:
+the parts most likely to break are the ones otherwise only verifiable by
+looking at the device.
+
 ## Known limits
 
 * **ChatGPT and Codex are one app bundle.** Codex ships inside `ChatGPT.app` as
