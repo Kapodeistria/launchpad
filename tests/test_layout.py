@@ -17,13 +17,27 @@ def make(key: str, kind: Kind, state: State = State.IDLE, last: float = 0.0) -> 
     return Session(key=key, kind=kind, session_id=key, state=state, last_event=last)
 
 
-def test_zones_do_not_overlap_and_cover_the_grid():
+def test_zones_and_the_app_row_do_not_overlap():
     pads = [pad for bank in ZONES.values() for pad in bank]
-    assert len(pads) == len(set(pads)) == 64
+    assert len(pads) == len(set(pads))
     summaries = [b for buttons in ZONE_SUMMARY.values() for b in buttons]
     assert not set(pads) & set(summaries)
     assert RESCAN_PAD not in set(pads) | set(summaries)
+    # App launchers live on the bottom grid row, so nothing else may claim it.
     assert not set(APP_TILES.values()) & set(pads)
+
+
+def test_the_app_row_is_the_bottom_row():
+    assert sorted(APP_TILES.values()) == [11, 12, 13, 14, 15]
+
+
+def test_adjacent_app_tiles_are_visibly_different():
+    from launchpad.layout import APP_COLOURS
+
+    ordered = [APP_COLOURS[key] for key, _ in sorted(APP_TILES.items(), key=lambda kv: kv[1])]
+    for left, right in zip(ordered, ordered[1:]):
+        distance = sum(abs(a - b) for a, b in zip(left, right))
+        assert distance >= 40, f"{left} and {right} are too close to tell apart"
 
 
 def test_each_kind_lands_in_its_own_zone():

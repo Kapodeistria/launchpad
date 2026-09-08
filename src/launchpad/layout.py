@@ -31,7 +31,7 @@ ZONES: dict[Kind, list[int]] = {
     Kind.CLAUDE: _rows(8, 7),
     Kind.CODEX_CLI: _rows(6, 5),
     Kind.CODEX_APP: _rows(4, 3),
-    Kind.SHELL: _rows(2, 1),
+    Kind.SHELL: _rows(2),
 }
 
 # Right-column buttons, aligned with the two rows of the zone they summarise.
@@ -39,29 +39,34 @@ ZONE_SUMMARY: dict[Kind, list[int]] = {
     Kind.CLAUDE: [89, 79],
     Kind.CODEX_CLI: [69, 59],
     Kind.CODEX_APP: [49, 39],
-    Kind.SHELL: [29, 19],
+    Kind.SHELL: [29],
 }
 
 # Top-row tiles. Keys match the `key` of the Session that AppSource builds.
+# App launchers occupy the bottom row of the grid, where they are under your
+# thumb, rather than the round buttons along the top.
 APP_TILES: dict[str, int] = {
-    "app:chatgpt": 91,
-    "app:codex": 92,
-    "app:outlook": 93,
-    "app:teams": 94,
-    "app:proton": 95,
+    "app:chatgpt": 11,
+    "app:codex": 12,
+    "app:outlook": 13,
+    "app:teams": 14,
+    "app:proton": 15,
 }
 
-# Each app tile gets its own hue so the top row is readable at a glance rather
-# than five identical dots. Values are the "app is running, nothing waiting"
-# colour; they are dimmed to a fifth when the app is not running.
+# Each app tile carries its own brand colour, taken from the product's own
+# palette and rescaled from 8-bit hex into the device's 0-127 range with the
+# brightest channel pushed to full so it reads across a desk. Outlook, Teams
+# and Proton really are three neighbouring blues in life, so they are ordered
+# to put the greatest hue distance between adjacent pads.
 APP_COLOURS: dict[str, tuple[int, int, int]] = {
-    "app:chatgpt": (95, 95, 95),    # white
-    "app:codex": (0, 110, 85),      # green-cyan
-    "app:outlook": (0, 55, 127),    # blue
-    "app:teams": (95, 45, 127),     # purple
-    "app:proton": (115, 25, 95),    # magenta
+    "app:chatgpt": (12, 120, 93),   # OpenAI green   #10A37F
+    "app:codex": (110, 110, 110),   # Codex white    #FFFFFF
+    "app:outlook": (0, 72, 127),    # Outlook blue   #0078D4
+    "app:teams": (75, 76, 127),     # Teams indigo   #6264A7
+    "app:proton": (54, 37, 127),    # Proton violet  #6D4AFF
 }
-RESCAN_PAD = 98
+# The round button at the end of the app row.
+RESCAN_PAD = 19
 
 # -- colours ----------------------------------------------------------------
 

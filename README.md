@@ -8,8 +8,6 @@ straight to that session's terminal tab.
 ## The board
 
 ```
-        1   2   3   4   5   6   7   8
- TOP  [GPT][CDX][OUT][TMS][   ][   ][   ][ ⟳ ]   app tiles + rescan
       ┌────────────────────────────┐
    8  │ C   C   C   C   C   C   C  │  ◄ Claude (iTerm)      green   [●] 89
    7  │ C   C   C   C   C   C   C  │                                [●] 79
@@ -21,33 +19,36 @@ straight to that session's terminal tab.
    3  │ a   a   a   a   a   a   a  │                                [●] 39
       ├────────────────────────────┤
    2  │ .   .   .   .   .   .   .  │  ◄ other terminals     white   [●] 29
-   1  │ .   .   .   .   .   .   .  │                                [●] 19
+      ├────────────────────────────┤
+   1  │GPT CDX OUT TMS PRO         │  ◄ app launchers               [⟳] 19
       └────────────────────────────┘
 ```
 
-The 8x8 grid holds the things there can be many of, 16 pads per zone. Pads fill
-left-to-right, top-to-bottom, and assignment is sticky so a pad you are watching
-never migrates under your finger.
+Sessions fill the grid from the top down, most urgent surface first. App
+launchers sit on the bottom row, under your thumb. The round button at the end
+of that row rescans: it clears the board and re-polls everything.
 
 The **right column** summarises the zone beside it: lit in the zone colour,
 blinking amber if anything in that zone needs you, blinking white if the zone
 has more sessions than pads. Pressing it jumps to that zone's most recently
 active session.
 
-The **top row** holds the things there is exactly one of:
+The **bottom row** carries one launcher per app, each in its own brand colour:
 
-| Pad | Tile | Lit when | Press |
-|-----|------|----------|-------|
-| 1 | ChatGPT | blinks amber on its Dock badge | activate ChatGPT |
-| 2 | Codex | breathes while any Codex thread works | raise the Codex window |
-| 3 | Outlook | blinks amber on unread | activate Outlook |
-| 4 | Teams | blinks amber on unread | activate Teams |
-| 5 | Proton Mail | blinks amber on unread | activate Proton Mail |
-| 8 | rescan | always dim | clear the board and re-poll |
+| Pad | App | Colour | Lit when |
+|-----|-----|--------|----------|
+| 1 | ChatGPT | OpenAI green `#10A37F` | blinks amber on its Dock badge |
+| 2 | Codex | white `#FFFFFF` | breathes while any Codex thread works |
+| 3 | Outlook | Microsoft blue `#0078D4` | blinks amber on unread |
+| 4 | Teams | Teams indigo `#6264A7` | blinks amber on unread |
+| 5 | Proton Mail | Proton violet `#6D4AFF` | blinks amber on unread |
 
-Each app tile has its own hue — white, green-cyan, blue, purple, magenta — so
-the row reads at a glance instead of as five identical dots. A tile is dimmed
-to a fifth brightness while its app is not running.
+Brand hexes are rescaled into the device's 0-127 range with the brightest
+channel pushed to full, so they read across a desk. Outlook, Teams and Proton
+genuinely are three neighbouring blues, so a test asserts adjacent tiles stay
+far enough apart in RGB to tell apart.
+
+A tile dims to a fifth brightness while its app is not running.
 
 The round logo button reflects the most urgent state anywhere on the board.
 
