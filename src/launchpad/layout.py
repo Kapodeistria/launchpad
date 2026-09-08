@@ -13,21 +13,31 @@ from __future__ import annotations
 from .device import note_for
 from .model import Kind, Session, State
 
-CLAUDE_PADS = [note_for(row, col) for row in (8, 7, 6, 5) for col in range(1, 9)]
-CODEX_PADS = [note_for(row, col) for row in (4, 3, 2, 1) for col in range(1, 9)]
+CLAUDE_PADS = [note_for(row, col) for row in (8, 7, 6) for col in range(1, 9)]
+CODEX_PADS = [note_for(row, col) for row in (5, 4) for col in range(1, 9)]
+SHELL_PADS = [note_for(row, col) for row in (3, 2, 1) for col in range(1, 9)]
+
+_BANKS = {
+    Kind.CLAUDE: CLAUDE_PADS,
+    Kind.CODEX_CLI: CODEX_PADS,
+    Kind.CODEX_APP: CODEX_PADS,
+    Kind.SHELL: SHELL_PADS,
+}
 
 # Palette indices (used by the hardware's own flash/pulse animations).
-_GREEN, _CYAN, _AMBER, _RED = 21, 37, 9, 5
+_GREEN, _CYAN, _AMBER, _RED, _WHITE = 21, 37, 9, 5, 3
 
 _IDLE_RGB = {
     Kind.CLAUDE: ("rgb", 0, 24, 4),
     Kind.CODEX_CLI: ("rgb", 0, 14, 26),
     Kind.CODEX_APP: ("rgb", 0, 14, 26),
+    Kind.SHELL: ("rgb", 8, 8, 10),
 }
 _PULSE = {
     Kind.CLAUDE: ("pulse", _GREEN),
     Kind.CODEX_CLI: ("pulse", _CYAN),
     Kind.CODEX_APP: ("pulse", _CYAN),
+    Kind.SHELL: ("pulse", _WHITE),
 }
 
 
@@ -56,7 +66,7 @@ class Layout:
         for key, sess in sorted(sessions.items(), key=lambda kv: kv[1].last_event):
             if key in self._assigned:
                 continue
-            bank = CLAUDE_PADS if sess.kind is Kind.CLAUDE else CODEX_PADS
+            bank = _BANKS[sess.kind]
             free = next((p for p in bank if p not in used), None)
             if free is None:
                 continue  # bank full; session simply is not shown

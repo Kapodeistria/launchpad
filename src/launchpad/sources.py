@@ -213,26 +213,43 @@ _IDLE_GLYPHS = set("✳✻✽✢·")
 _ALL_GLYPHS = _BUSY_GLYPHS | _IDLE_GLYPHS
 
 
-def _tty_processes() -> dict[str, str]:
-    """Map '/dev/ttysNNN' -> command name, for agent CLIs only."""
+# Commands that mean "this tab is sitting at a prompt", not doing work.
+_SHELLS = {"zsh", "bash", "sh", "fish", "dash", "csh", "tcsh", "login", "screen", "tmux"}
+_AGENTS = {"claude", "codex"}
+
+
+def _tty_state() -> dict[str, tuple[str | None, str | None]]:
+    """Map '/dev/ttysNNN' -> (agent command, foreground job).
+
+    The foreground job is the process in the tty's foreground process group
+    (marked '+' by ps) that is not the shell itself -- that is what tells us a
+    plain terminal tab is busy rather than idling at a prompt.
+    """
     import subprocess
 
     try:
         out = subprocess.run(
-            ["ps", "-axo", "tty=,command="],
+            ["ps", "-axo", "tty=,stat=,command="],
             capture_output=True, text=True, timeout=5, check=False,
         ).stdout
     except (subprocess.SubprocessError, OSError):
         return {}
-    found = {}
+
+    found: dict[str, tuple[str | None, str | None]] = {}
     for line in out.splitlines():
-        parts = line.split(None, 1)
-        if len(parts) != 2 or parts[0] == "??":
+        parts = line.split(None, 2)
+        if len(parts) != 3 or parts[0] == "??":
             continue
-        tty, command = parts
-        name = command.split()[0].rsplit("/", 1)[-1]
-        if name in ("claude", "codex"):
-            found[f"/dev/{tty}"] = name
+        tty, stat, command = parts
+        # A login shell shows up as "-zsh"; strip the leading dash.
+        name = command.split()[0].rsplit("/", 1)[-1].lstrip("-")
+        key = f"/dev/{tty}"
+        agent, foreground = found.get(key, (None, None))
+        if name in _AGENTS:
+            agent = name
+        elif "+" in stat and name not in _SHELLS:
+            foreground = name
+        found[key] = (agent, foreground)
     return found
 
 
@@ -251,7 +268,7 @@ class ItermSource:
         tabs = iterm_sessions()
         if not tabs:
             return  # iTerm not running, or Automation permission not granted
-        procs = _tty_processes()
+        procs = _tty_state()
 
         # Sessions that reported through a hook already own their tab: refresh
         # their label from the tab title, and retire them if the tab has gone.
@@ -270,22 +287,27 @@ class ItermSource:
         # Anything else running an agent CLI is discovered here.
         live = set()
         for uuid, (tty, title) in tabs.items():
-            command = procs.get(tty)
-            if command is None or uuid in claimed:
+            if uuid in claimed:
                 continue
+            agent, foreground = procs.get(tty, (None, None))
             key = f"iterm:{uuid}"
             live.add(key)
             sess = sessions.get(key)
+            kind = (
+                Kind.CLAUDE if agent == "claude"
+                else Kind.CODEX_CLI if agent == "codex"
+                else Kind.SHELL
+            )
             if sess is None:
-                sess = Session(
-                    key=key,
-                    kind=Kind.CLAUDE if command == "claude" else Kind.CODEX_CLI,
-                    session_id=uuid,
-                    iterm_uuid=uuid,
-                )
+                sess = Session(key=key, kind=kind, session_id=uuid, iterm_uuid=uuid)
                 sessions[key] = sess
+            sess.kind = kind  # a shell tab becomes an agent tab when you start one
             sess.label = self._clean(title)
-            sess.touch(self._state_from(title))
+            if agent:
+                sess.touch(self._state_from(title))
+            else:
+                # No agent here, so "busy" just means a job is running.
+                sess.touch(State.WORKING if foreground else State.IDLE)
             sess.seen = time.time()
 
         # Drop discovered sessions whose tab closed or whose CLI exited.

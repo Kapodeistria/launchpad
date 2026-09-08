@@ -19,6 +19,7 @@ class Kind(str, Enum):
     CLAUDE = "claude"
     CODEX_CLI = "codex-cli"
     CODEX_APP = "codex-app"
+    SHELL = "shell"     # a terminal tab with no agent in it
 
 
 @dataclass

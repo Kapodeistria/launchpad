@@ -10,15 +10,19 @@ straight to that session's terminal tab.
 ```
         col 1 ....................... col 8
 row 8  ┌───────────────────────────────────┐
-row 7  │                                   │   Claude Code sessions
-row 6  │        (up to 32 pads)            │   fill left->right, top->bottom
-row 5  │                                   │
+row 7  │        (up to 24 pads)            │   Claude Code sessions
+row 6  │                                   │
        ├───────────────────────────────────┤
+row 5  │        (up to 16 pads)            │   Codex sessions
 row 4  │                                   │
-row 3  │        (up to 32 pads)            │   Codex sessions
-row 2  │                                   │
+       ├───────────────────────────────────┤
+row 3  │                                   │
+row 2  │        (up to 24 pads)            │   plain terminal tabs
 row 1  └───────────────────────────────────┘
 ```
+
+Every iTerm tab gets a pad, so a new window shows up within about three
+seconds. Pads fill left-to-right, top-to-bottom within their bank.
 
 The round logo button reflects the most urgent state anywhere on the board.
 
@@ -32,7 +36,10 @@ The round logo button reflects the most urgent state anywhere on the board.
 | blinking red  | error   | last turn failed                                |
 | dark          | —       | no session on that pad                          |
 
-Green = Claude Code, cyan/blue = Codex.
+Green = Claude Code, cyan/blue = Codex, white = a plain terminal tab.
+
+For a tab with no agent in it, *working* means a foreground job is running:
+something other than the shell itself owns the tty's foreground process group.
 
 ## How state is detected
 
@@ -44,10 +51,12 @@ The two tools expose state differently, so there are two sources:
   `CLAUDE_CODE_SESSION_ID` and `ITERM_SESSION_ID` — that pairing is what lets a
   pad press focus the correct terminal tab. The hook costs ~6 ms and always
   exits 0, so it cannot stall or fail a session.
-* **Any agent CLI in an iTerm tab** is also discovered without hooks:
-  `ItermSource` asks iTerm for each tab's `tty` and matches it against the
-  `claude` / `codex` processes in `ps`. This is what makes sessions that predate
-  the hook install show up immediately. State comes from the glyph Claude Code
+* **Every iTerm tab** is discovered without hooks: `ItermSource` asks iTerm for
+  each tab's `tty` and matches it against `ps` output. A `claude` or `codex`
+  process on that tty makes it an agent pad; anything else is a plain terminal
+  pad. This is what makes tabs that predate the hook install, and brand-new
+  windows, show up immediately. A shell tab is promoted in place the moment you
+  start an agent in it. State comes from the glyph Claude Code
   puts at the front of the tab title (a filled-circle spinner means working, an
   asterisk means idle). When the same session later reports through a hook, the
   hook entry wins, since it carries exact state.
