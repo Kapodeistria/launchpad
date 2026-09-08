@@ -42,9 +42,12 @@ def focus(session: Session) -> bool:
         if _osascript(_FOCUS_ITERM % session.iterm_uuid) == "ok":
             return True
     if session.kind is Kind.CODEX_APP:
-        # Codex Desktop exposes no per-thread deep link, so we can only raise
-        # the app itself and leave you on whatever thread it has open.
-        return _osascript('tell application "ChatGPT" to activate') == ""
+        # Codex Desktop exposes no per-thread deep link. With Accessibility we
+        # can at least raise the window whose title matches the thread; without
+        # it we can only bring the app forward.
+        return raise_window("ChatGPT", session.label) or activate("ChatGPT")
+    if session.kind is Kind.APP and session.bundle:
+        return activate(session.bundle)
     return False
 
 
@@ -81,3 +84,31 @@ def iterm_sessions() -> dict[str, tuple[str, str]]:
 def iterm_titles() -> dict[str, str]:
     """Map iTerm session UUID -> tab title."""
     return {u: name for u, (_tty, name) in iterm_sessions().items()}
+
+
+def activate(app: str) -> bool:
+    """Bring an application to the front by name."""
+    return _osascript(f'tell application "{app}" to activate\nreturn "ok"') == "ok"
+
+
+def raise_window(app: str, contains: str) -> bool:
+    """Raise the first window of `app` whose title contains `contains`.
+
+    Needs Accessibility permission; without it this returns False and callers
+    fall back to activating the app as a whole.
+    """
+    if not contains:
+        return False
+    script = (
+        f'tell application "System Events" to tell process "{app}"\n'
+        "  repeat with w in windows\n"
+        f'    if (name of w) contains "{contains}" then\n'
+        '      perform action "AXRaise" of w\n'
+        "      set frontmost to true\n"
+        '      return "ok"\n'
+        "    end if\n"
+        "  end repeat\n"
+        "end tell\n"
+        'return "missing"'
+    )
+    return _osascript(script) == "ok"

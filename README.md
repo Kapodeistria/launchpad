@@ -5,24 +5,44 @@ A pad per session: it **breathes** while the agent is working, **blinks amber**
 when it is blocked waiting on you, and glows dim when idle. Press a pad to jump
 straight to that session's terminal tab.
 
-## Layout
+## The board
 
 ```
-        col 1 ....................... col 8
-row 8  ┌───────────────────────────────────┐
-row 7  │        (up to 24 pads)            │   Claude Code sessions
-row 6  │                                   │
-       ├───────────────────────────────────┤
-row 5  │        (up to 16 pads)            │   Codex sessions
-row 4  │                                   │
-       ├───────────────────────────────────┤
-row 3  │                                   │
-row 2  │        (up to 24 pads)            │   plain terminal tabs
-row 1  └───────────────────────────────────┘
+        1   2   3   4   5   6   7   8
+ TOP  [GPT][CDX][OUT][TMS][   ][   ][   ][ ⟳ ]   app tiles + rescan
+      ┌────────────────────────────┐
+   8  │ C   C   C   C   C   C   C  │  ◄ Claude (iTerm)      green   [●] 89
+   7  │ C   C   C   C   C   C   C  │                                [●] 79
+      ├────────────────────────────┤
+   6  │ x   x   x   x   x   x   x  │  ◄ Codex CLI (iTerm)   cyan    [●] 69
+   5  │ x   x   x   x   x   x   x  │                                [●] 59
+      ├────────────────────────────┤
+   4  │ a   a   a   a   a   a   a  │  ◄ Codex app threads   blue    [●] 49
+   3  │ a   a   a   a   a   a   a  │                                [●] 39
+      ├────────────────────────────┤
+   2  │ .   .   .   .   .   .   .  │  ◄ other terminals     white   [●] 29
+   1  │ .   .   .   .   .   .   .  │                                [●] 19
+      └────────────────────────────┘
 ```
 
-Every iTerm tab gets a pad, so a new window shows up within about three
-seconds. Pads fill left-to-right, top-to-bottom within their bank.
+The 8x8 grid holds the things there can be many of, 16 pads per zone. Pads fill
+left-to-right, top-to-bottom, and assignment is sticky so a pad you are watching
+never migrates under your finger.
+
+The **right column** summarises the zone beside it: lit in the zone colour,
+blinking amber if anything in that zone needs you, blinking white if the zone
+has more sessions than pads. Pressing it jumps to that zone's most recently
+active session.
+
+The **top row** holds the things there is exactly one of:
+
+| Pad | Tile | Lit when | Press |
+|-----|------|----------|-------|
+| 1 | ChatGPT | app is running | activate ChatGPT |
+| 2 | Codex | breathes while any Codex thread works | raise the Codex window |
+| 3 | Outlook | blinks amber on unread | activate Outlook |
+| 4 | Teams | blinks amber on unread | activate Teams |
+| 8 | rescan | always dim | clear the board and re-poll |
 
 The round logo button reflects the most urgent state anywhere on the board.
 
@@ -31,12 +51,12 @@ The round logo button reflects the most urgent state anywhere on the board.
 | Look          | State   | Meaning                                        |
 |---------------|---------|------------------------------------------------|
 | breathing     | working | the agent is actively processing                |
-| blinking amber| waiting | blocked on you — permission prompt or a question|
+| blinking amber| waiting | blocked on you — permission prompt, or unread   |
 | dim steady    | idle    | session alive, waiting for your next prompt     |
 | blinking red  | error   | last turn failed                                |
-| dark          | —       | no session on that pad                          |
+| dark          | —       | nothing on that pad                             |
 
-Green = Claude Code, cyan/blue = Codex, white = a plain terminal tab.
+Green = Claude Code, cyan = Codex CLI, blue = Codex app, white = plain terminal.
 
 For a tab with no agent in it, *working* means a foreground job is running:
 something other than the shell itself owns the tty's foreground process group.
@@ -65,6 +85,25 @@ The two tools expose state differently, so there are two sources:
   events Codex already writes. Only new bytes are read on each poll. Subagent
   threads are filtered out, since they are not independently openable.
 
+## Permissions
+
+Run `uv run launchpad doctor` to see what works and what needs granting. It
+checks the MIDI device, iTerm, Outlook and Accessibility, and prints the exact
+remedy for anything failing.
+
+Only one permission needs granting by hand. Teams ships no scripting dictionary
+and the Notification Center database is Full-Disk-Access protected, so its
+unread count is reachable only through the Dock badge, which needs
+Accessibility. The daemon makes that call through `osascript`, so that is the
+binary to grant — not Python, and not `uv`:
+
+> System Settings → Privacy & Security → Accessibility → **+** →
+> <kbd>⌘⇧G</kbd> → `/usr/bin/osascript` → Open → switch it on.
+
+Without it the board still runs: Outlook keeps its unread count through its own
+scripting dictionary, the Teams tile becomes a plain launcher, and the Codex
+tile raises the app rather than a specific window.
+
 ## Install
 
 ```sh
@@ -88,14 +127,17 @@ Quitting restores the device to Live mode and clears the grid.
 
 ## Known limits
 
-* **Codex Desktop threads focus the app, not the thread.** ChatGPT.app registers
-  a `codex://` URL scheme but exposes no documented per-thread deep link, so a
-  press raises the app and leaves you on whatever thread it has open. Codex CLI
-  sessions running in iTerm focus their tab correctly.
+* **ChatGPT and Codex are one app bundle.** Codex ships inside `ChatGPT.app` as
+  a framework; there is no standalone Codex.app. Its Chromium `scripting.sdef`
+  is a stub that reports zero windows even while the app is open, so neither
+  tile can enumerate conversations. Codex *threads* are still tracked through
+  their rollout transcripts, and with Accessibility a press raises the window
+  whose title matches the thread. Codex CLI sessions in iTerm focus exactly.
+* **Each zone holds 16 sessions.** Beyond that the zone's summary button blinks
+  white and the extra sessions are not shown.
 * Sessions discovered only via iTerm carry glyph-derived state, which cannot
   distinguish "waiting on you" from "idle". They upgrade to exact state as soon
   as they fire their first hook.
 * Only iTerm is supported for discovery and focus; other terminals would need
   their own equivalent of the `tty` lookup.
 * Sessions silent for more than 3 hours drop off the grid (`DEFAULT_TTL`).
-* Each bank holds 32 sessions; beyond that, extra sessions are not shown.

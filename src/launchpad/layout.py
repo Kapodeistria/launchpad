@@ -1,80 +1,159 @@
 """Map sessions onto pads and decide what colour each pad should be.
 
-Layout on the 8x8 grid:
-    rows 8..5 (top half)     Claude Code sessions
-    rows 4..1 (bottom half)  Codex sessions
-Within a half, pads fill left-to-right, top-to-bottom.
+The board is zoned so it can be read at a glance from across the room. The 8x8
+grid holds the things there can be many of; the round buttons hold the things
+there is exactly one of.
 
-Pad assignment is *sticky*: once a session owns a pad it keeps it until the
-session ends, so a pad you are watching never migrates under your finger.
+    TOP  [GPT][CDX][OUT][TMS][   ][   ][   ][ R ]   app tiles + rescan
+         ┌───────────────────────────┐
+    8,7  │ Claude Code (iTerm)       │ green   right column: per-zone summary
+    6,5  │ Codex CLI   (iTerm)       │ cyan
+    4,3  │ Codex app threads         │ blue
+    2,1  │ other terminal tabs       │ white
+         └───────────────────────────┘
+
+Pad assignment within a zone is *sticky*: once a session owns a pad it keeps it
+until the session ends, so a pad you are watching never migrates under your
+finger.
 """
 from __future__ import annotations
 
 from .device import note_for
 from .model import Kind, Session, State
 
-CLAUDE_PADS = [note_for(row, col) for row in (8, 7, 6) for col in range(1, 9)]
-CODEX_PADS = [note_for(row, col) for row in (5, 4) for col in range(1, 9)]
-SHELL_PADS = [note_for(row, col) for row in (3, 2, 1) for col in range(1, 9)]
+# -- zones ------------------------------------------------------------------
 
-_BANKS = {
-    Kind.CLAUDE: CLAUDE_PADS,
-    Kind.CODEX_CLI: CODEX_PADS,
-    Kind.CODEX_APP: CODEX_PADS,
-    Kind.SHELL: SHELL_PADS,
+def _rows(*rows: int) -> list[int]:
+    return [note_for(row, col) for row in rows for col in range(1, 9)]
+
+
+ZONES: dict[Kind, list[int]] = {
+    Kind.CLAUDE: _rows(8, 7),
+    Kind.CODEX_CLI: _rows(6, 5),
+    Kind.CODEX_APP: _rows(4, 3),
+    Kind.SHELL: _rows(2, 1),
 }
 
-# Palette indices (used by the hardware's own flash/pulse animations).
-_GREEN, _CYAN, _AMBER, _RED, _WHITE = 21, 37, 9, 5, 3
+# Right-column buttons, aligned with the two rows of the zone they summarise.
+ZONE_SUMMARY: dict[Kind, list[int]] = {
+    Kind.CLAUDE: [89, 79],
+    Kind.CODEX_CLI: [69, 59],
+    Kind.CODEX_APP: [49, 39],
+    Kind.SHELL: [29, 19],
+}
 
+# Top-row tiles. Keys match the `key` of the Session that AppSource builds.
+APP_TILES: dict[str, int] = {
+    "app:chatgpt": 91,
+    "app:codex": 92,
+    "app:outlook": 93,
+    "app:teams": 94,
+}
+RESCAN_PAD = 98
+
+# -- colours ----------------------------------------------------------------
+
+# Palette indices, used by the hardware's own flash/pulse animations.
+_GREEN, _CYAN, _BLUE, _AMBER, _RED, _WHITE = 21, 37, 45, 9, 5, 3
+
+_ZONE_PALETTE = {
+    Kind.CLAUDE: _GREEN,
+    Kind.CODEX_CLI: _CYAN,
+    Kind.CODEX_APP: _BLUE,
+    Kind.SHELL: _WHITE,
+}
 _IDLE_RGB = {
     Kind.CLAUDE: ("rgb", 0, 24, 4),
-    Kind.CODEX_CLI: ("rgb", 0, 14, 26),
-    Kind.CODEX_APP: ("rgb", 0, 14, 26),
+    Kind.CODEX_CLI: ("rgb", 0, 20, 22),
+    Kind.CODEX_APP: ("rgb", 0, 8, 30),
     Kind.SHELL: ("rgb", 8, 8, 10),
+    Kind.APP: ("rgb", 6, 6, 8),
 }
-_PULSE = {
-    Kind.CLAUDE: ("pulse", _GREEN),
-    Kind.CODEX_CLI: ("pulse", _CYAN),
-    Kind.CODEX_APP: ("pulse", _CYAN),
-    Kind.SHELL: ("pulse", _WHITE),
-}
+
+OFF = ("off",)
 
 
 def colour_for(session: Session) -> tuple:
     """Blink = needs you, breathe = busy, dim steady = idle."""
+    if session.kind is Kind.APP:
+        if session.badge > 0:
+            return ("flash", _AMBER, 0)      # unread waiting for you
+        if session.state is State.WORKING:
+            return ("pulse", _BLUE)
+        if session.state is State.IDLE:
+            return ("rgb", 20, 20, 24)       # app running
+        return _IDLE_RGB[Kind.APP]           # app not running: barely lit
     if session.state is State.WAITING:
-        return ("flash", _AMBER, 0)     # hard blink: you are blocking it
+        return ("flash", _AMBER, 0)          # hard blink: you are blocking it
     if session.state is State.ERROR:
         return ("flash", _RED, 0)
     if session.state is State.WORKING:
-        return _PULSE[session.kind]     # slow breathe: it is busy
-    return _IDLE_RGB[session.kind]      # dim steady: alive, waiting for you
+        return ("pulse", _ZONE_PALETTE[session.kind])
+    return _IDLE_RGB[session.kind]
 
+
+def summary_colour(kind: Kind, members: list[Session], overflowed: bool) -> tuple:
+    """Colour for a zone's right-column button."""
+    if not members:
+        return OFF
+    if any(s.state is State.WAITING for s in members):
+        return ("flash", _AMBER, 0)
+    if overflowed:
+        return ("flash", _WHITE, 0)          # more sessions than pads
+    if any(s.state is State.WORKING for s in members):
+        return ("pulse", _ZONE_PALETTE[kind])
+    return _IDLE_RGB[kind]
+
+
+# -- assignment -------------------------------------------------------------
 
 class Layout:
     def __init__(self) -> None:
         self._assigned: dict[str, int] = {}   # session key -> pad
+        self.overflow: set[Kind] = set()
 
     def assign(self, sessions: dict[str, Session]) -> dict[int, Session]:
         """Return {pad: session}, keeping existing pads stable."""
-        # Release pads whose session has gone.
         for key in [k for k in self._assigned if k not in sessions]:
             del self._assigned[key]
 
         used = set(self._assigned.values())
+        self.overflow = set()
         for key, sess in sorted(sessions.items(), key=lambda kv: kv[1].last_event):
-            if key in self._assigned:
+            if key in self._assigned or sess.kind is Kind.APP:
                 continue
-            bank = _BANKS[sess.kind]
-            free = next((p for p in bank if p not in used), None)
+            free = next((p for p in ZONES[sess.kind] if p not in used), None)
             if free is None:
-                continue  # bank full; session simply is not shown
+                self.overflow.add(sess.kind)   # zone full; flagged on its summary
+                continue
             self._assigned[key] = free
             used.add(free)
 
         return {pad: sessions[key] for key, pad in self._assigned.items()}
 
     def pads(self, sessions: dict[str, Session]) -> tuple[dict[int, tuple], dict[int, Session]]:
+        """Full desired-state map for the whole board, plus pad -> session."""
         mapping = self.assign(sessions)
-        return {pad: colour_for(s) for pad, s in mapping.items()}, mapping
+        pads = {pad: colour_for(s) for pad, s in mapping.items()}
+
+        # Top-row app tiles sit at fixed pads and are pressed, not assigned.
+        for key, pad in APP_TILES.items():
+            tile = sessions.get(key)
+            if tile is not None:
+                pads[pad] = colour_for(tile)
+                mapping[pad] = tile
+        pads[RESCAN_PAD] = ("rgb", 10, 10, 10)
+
+        # Right-column zone summaries.
+        for kind, buttons in ZONE_SUMMARY.items():
+            members = [s for s in mapping.values() if s.kind is kind]
+            colour = summary_colour(kind, members, kind in self.overflow)
+            for button in buttons:
+                pads[button] = colour
+
+        return pads, mapping
+
+    def newest_in(self, kind: Kind, sessions: dict[str, Session]) -> Session | None:
+        """Most recently active session in a zone, for its summary button."""
+        members = [s for s in sessions.values() if s.kind is kind]
+        return max(members, key=lambda s: s.last_event, default=None)

@@ -20,6 +20,7 @@ class Kind(str, Enum):
     CODEX_CLI = "codex-cli"
     CODEX_APP = "codex-app"
     SHELL = "shell"     # a terminal tab with no agent in it
+    APP = "app"         # a one-per-machine tile on the round buttons
 
 
 @dataclass
@@ -35,6 +36,8 @@ class Session:
     state: State = State.IDLE
     last_event: float = field(default_factory=time.time)
     seen: float = field(default_factory=time.time)
+    badge: int = 0                 # unread count, for Kind.APP tiles
+    bundle: str = ""               # app name to activate when pressed
 
     @property
     def project(self) -> str:
