@@ -52,6 +52,19 @@ class Launchpad:
     def programmer_mode(self, on: bool = True) -> None:
         self._sysex(0x0E, 0x01 if on else 0x00)
 
+    def reassert(self) -> None:
+        """Re-enter Programmer Mode and force a full repaint.
+
+        Anything else that talks to the device -- another script, the Novation
+        editor, a replug -- can drop it back to Live Mode, where the grid sends
+        different note numbers and our LED writes go nowhere. Nothing reports
+        that; the board just goes dead. Re-asserting periodically makes that
+        state self-healing instead of permanent. The shadow is dropped so the
+        next render repaints every pad rather than diffing against stale state.
+        """
+        self.programmer_mode(True)
+        self._shadow.clear()
+
     # -- lighting -----------------------------------------------------
     def _flush(self, specs: list[list[int]]) -> None:
         for i in range(0, len(specs), _MAX_SPECS_PER_MSG):

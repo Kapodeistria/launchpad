@@ -18,6 +18,9 @@ from .sources import ClaudeSource, CodexSource, ItermSource, prune
 # (INPUT_INTERVAL) so a pad responds immediately rather than waiting for the
 # next refresh tick.
 POLL_INTERVAL = 0.4
+# How often to re-enter Programmer Mode in case something knocked the device
+# out of it. Cheap: one SysEx plus a full repaint.
+REASSERT_INTERVAL = 5.0
 # Scanning iTerm and the apps shells out to osascript, so it runs on a slower
 # cadence than tailing the event log.
 SCAN_INTERVAL = 3.0
@@ -34,6 +37,7 @@ class Daemon:
         self.pad_map: dict[int, Session] = {}
         self.verbose = verbose
         self._last_scan = 0.0
+        self._last_reassert = 0.0
         self._last_report = ""
         # Presses arrive on the MIDI callback thread and are handed to a worker
         # so a slow fallback path can never stall incoming input.
@@ -138,6 +142,10 @@ class Daemon:
         print("launchpad: watching Claude, Codex, terminals and apps. Ctrl-C to stop.", flush=True)
         try:
             while True:
+                now = time.time()
+                if now - self._last_reassert > REASSERT_INTERVAL:
+                    self._last_reassert = now
+                    lp.reassert()
                 self.refresh()
                 self.render(lp)
                 time.sleep(POLL_INTERVAL)
