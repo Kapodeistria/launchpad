@@ -1,8 +1,8 @@
-"""The one-per-machine tiles that live on the top row of round buttons.
+"""The one-per-machine tiles that live on the bottom row of the grid.
 
-Each of the four apps exposes its state differently, and two of them expose
-nothing without extra permission, so every probe here degrades to a launcher
-rather than failing:
+Each app exposes its state differently, and several expose nothing without
+extra permission, so every probe here degrades to a launcher rather than
+failing:
 
 * **Outlook** answers `unread count of inbox` through its own scripting
   dictionary. This needs only Automation permission, which macOS prompts for
@@ -10,31 +10,30 @@ rather than failing:
 * **Teams** ships no scripting dictionary at all, and the Notification Center
   database is Full-Disk-Access protected. Its unread count is only reachable
   from the Dock badge, which requires Accessibility.
-* **ChatGPT and Codex are the same bundle.** `ChatGPT.app` embeds Codex as a
-  framework, and its Chromium `scripting.sdef` is a stub that reports zero
-  windows, so neither tile can enumerate conversations. ChatGPT is a launcher;
-  the Codex tile reflects the rollout-transcript state that `CodexSource`
-  already tracks.
+* **WhatsApp** ships no scripting dictionary either, so like Teams it is a
+  launcher plus whatever its Dock badge says.
+* **ChatGPT and Codex are the same bundle,** and so one tile. `ChatGPT.app`
+  embeds Codex as a framework, so two tiles launched the same process and only
+  differed in what they could say about it. The one tile says both: the Dock
+  badge for ChatGPT, and the rollout-transcript state `CodexSource` already
+  tracks for Codex threads. Its Chromium `scripting.sdef` is a stub reporting
+  zero windows, so neither half can enumerate conversations.
 """
 from __future__ import annotations
 
 import subprocess
 
+from .config import TILES, Tile
 from .focus import _osascript
 from .model import Kind, Session, State
 
-CLAUDE_APP = "Claude"
-CHATGPT_APP = "ChatGPT"
+# The one app named here rather than configured: it is the only one that can
+# be asked directly instead of through its Dock badge.
 OUTLOOK_APP = "Microsoft Outlook"
-TEAMS_APP = "Microsoft Teams"
-PROTON_APP = "Proton Mail"
-
-# Dock badge labels are matched against these, case-insensitively.
-_DOCK_NAMES = {"outlook": OUTLOOK_APP, "teams": TEAMS_APP}
 
 
-def running_apps() -> set[str]:
-    """Names of currently running applications, via ps on the bundle paths.
+def running_apps(names: set[str] | frozenset[str]) -> set[str]:
+    """Which of `names` are currently running, via ps on the bundle paths.
 
     Deliberately not `System Events`, which would need Accessibility for
     something we can determine from the process table for free.
@@ -46,11 +45,7 @@ def running_apps() -> set[str]:
         ).stdout
     except (subprocess.SubprocessError, OSError):
         return set()
-    found = set()
-    for name in (CLAUDE_APP, CHATGPT_APP, OUTLOOK_APP, TEAMS_APP, PROTON_APP):
-        if f"/{name}.app/Contents/MacOS/" in out:
-            found.add(name)
-    return found
+    return {name for name in names if f"/{name}.app/Contents/MacOS/" in out}
 
 
 def outlook_unread() -> int | None:
@@ -93,56 +88,47 @@ def dock_badges() -> dict[str, int]:
 
 
 class AppSource:
-    """Builds the four fixed app tiles."""
+    """Builds the configured app tiles along the bottom row."""
+
+    def __init__(self, tiles: tuple[Tile, ...] = TILES) -> None:
+        self.tiles = tiles
 
     def poll(self, sessions: dict[str, Session]) -> None:
-        running = running_apps()
+        running = running_apps({t.app for t in self.tiles})
         badges = dock_badges()
-
-        def tile(key: str, label: str, bundle: str) -> Session:
-            sess = sessions.get(key)
-            if sess is None:
-                sess = Session(key=key, kind=Kind.APP, session_id=key, label=label)
-                sessions[key] = sess
-            sess.bundle = bundle
-            sess.seen = sess.last_event if sess.badge else sess.seen
-            return sess
-
-        # The Claude desktop app, distinct from the Claude Code sessions that
-        # fill the top of the grid.
-        claude = tile("app:claude", "Claude", CLAUDE_APP)
-        claude.badge = badges.get(CLAUDE_APP, 0)
-        claude.state = State.IDLE if CLAUDE_APP in running else State.ERROR
-
-        # ChatGPT: no conversation list is reachable, but it does carry a Dock
-        # badge, so the tile at least shows how much is waiting there.
-        chatgpt = tile("app:chatgpt", "ChatGPT", CHATGPT_APP)
-        chatgpt.badge = badges.get(CHATGPT_APP, 0)
-        chatgpt.state = State.IDLE if CHATGPT_APP in running else State.ERROR
-
-        # Codex: same bundle, but mirrors the rollout-transcript thread states.
+        # Codex threads are polled before this, so their state is current.
         threads = [s for s in sessions.values() if s.kind is Kind.CODEX_APP]
-        codex = tile("app:codex", "Codex", CHATGPT_APP)
-        codex.state = (
-            State.WORKING if any(t.state is State.WORKING for t in threads)
-            else State.IDLE if CHATGPT_APP in running
-            else State.ERROR
-        )
 
-        outlook = tile("app:outlook", "Outlook", OUTLOOK_APP)
-        unread = outlook_unread()
-        if unread is None:
-            unread = badges.get(OUTLOOK_APP, 0)
-        outlook.badge = unread
-        outlook.state = State.IDLE if OUTLOOK_APP in running else State.ERROR
+        for tile in self.tiles:
+            sess = sessions.get(tile.key)
+            if sess is None:
+                sess = Session(
+                    key=tile.key, kind=Kind.APP, session_id=tile.key, label=tile.label
+                )
+                sessions[tile.key] = sess
+            sess.bundle = tile.app
+            sess.seen = sess.last_event if sess.badge else sess.seen
+            sess.badge = self._unread(tile, badges)
+            sess.state = (
+                # The Codex tile mirrors its threads; everything else can only
+                # say whether the app is up at all.
+                State.WORKING
+                if tile.role == "codex"
+                and any(t.state is State.WORKING for t in threads)
+                else State.IDLE if tile.app in running
+                else State.ERROR
+            )
 
-        teams = tile("app:teams", "Teams", TEAMS_APP)
-        teams.badge = badges.get(TEAMS_APP, 0)
-        teams.state = State.IDLE if TEAMS_APP in running else State.ERROR
-
-        proton = tile("app:proton", "Proton Mail", PROTON_APP)
-        proton.badge = badges.get(PROTON_APP, 0)
-        proton.state = State.IDLE if PROTON_APP in running else State.ERROR
+    @staticmethod
+    def _unread(tile: Tile, badges: dict[str, int]) -> int:
+        """Unread count for a tile, preferring a real answer to a Dock badge."""
+        if tile.app == OUTLOOK_APP:
+            # Outlook has its own scripting dictionary, which needs only
+            # Automation permission rather than Accessibility.
+            unread = outlook_unread()
+            if unread is not None:
+                return unread
+        return badges.get(tile.app, 0)
 
     @staticmethod
     def accessibility_ok() -> bool:

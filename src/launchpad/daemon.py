@@ -7,7 +7,7 @@ import threading
 import time
 
 from .apps import AppSource
-from .device import LOGO, Launchpad
+from .device import LOGO, Launchpad, scroll_seconds
 from .focus import focus
 from .iterm import BRIDGE
 from .layout import APP_TILES, ATTENTION_PAD, RESCAN_PAD, ZONE_SUMMARY, Layout
@@ -80,7 +80,14 @@ class Daemon:
         if not self.verbose:
             return
         rows = []
-        for pad, s in sorted(self.pad_map.items(), reverse=True):
+        seen: set[str] = set()
+        # Ascending, so the printout reads in the same direction as the board:
+        # launchers first, then Claude, Codex, and terminals above them.
+        for pad, s in sorted(self.pad_map.items()):
+            # A message tile also owns every pad of its unread meter; one row.
+            if s.key in seen:
+                continue
+            seen.add(s.key)
             badge = f"  {s.badge} unread" if s.badge else ""
             rows.append(f"  pad {pad}  {s.kind.value:10} {s.state.value:8} {s.label or s.project}{badge}")
         text = "\n".join(rows) or "  (nothing on the board)"
@@ -91,6 +98,12 @@ class Daemon:
 
     # -- input --------------------------------------------------------
     def handle(self, pad: int, held: float, lp: Launchpad) -> None:
+        if self._text_until:
+            # A long name owns the grid for twenty seconds, so any press
+            # dismisses it rather than leaving the board frozen until it ends.
+            self._text_until = 0.0
+            lp.stop_text()
+            return
         if held >= HOLD_SECONDS:
             self._announce(pad, lp)
             return
@@ -122,12 +135,14 @@ class Daemon:
         session = self.pad_map.get(pad)
         if session is None:
             return
-        name = (session.label or session.project or session.session_id)[:48]
-        lp.scroll_text(name.upper())
-        # Roughly how long the device takes to scroll it; the board repaints
-        # itself once this passes.
-        self._text_until = time.time() + min(2.0 + 0.32 * len(name), 12.0)
-        print(f"  -> pad {pad}: showing {name!r}", flush=True)
+        name = session.label or session.project or session.session_id
+        # The device reports back what it could actually draw, so the wait is
+        # timed against that rather than against the name we hoped to show.
+        shown = lp.scroll_text(name.upper())
+        # Wait the scroll out in full: repainting over it partway through was
+        # its own silent truncation, and the worst kind -- it cut mid-word.
+        self._text_until = time.time() + scroll_seconds(shown)
+        print(f"  -> pad {pad}: showing {shown!r}", flush=True)
 
     def _open_next_waiting(self, pad: int) -> None:
         """Jump to a session that is blocked on you, cycling if several are."""

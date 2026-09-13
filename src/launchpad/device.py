@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import threading
 import time
+import unicodedata
 
 import mido
 
@@ -24,6 +25,52 @@ _STATIC, _FLASH, _PULSE, _RGB = 0x00, 0x01, 0x02, 0x03
 
 # The device rejects very long SysEx payloads, so batch LED updates.
 _MAX_SPECS_PER_MSG = 20
+
+# -- scrolling text ---------------------------------------------------------
+
+# Scroll speed byte, and what it works out to in wall-clock time: measured at
+# roughly a third of a second per character, plus the lead-in before the first
+# one reaches the grid.
+SCROLL_SPEED = 24
+SCROLL_SECONDS_PER_CHAR = 0.32
+SCROLL_LEAD_IN = 2.0
+# Longest string sent in one text SysEx. The device's payload limit is not
+# documented, so this stays at the length that has always been sent.
+SCROLL_MAX = 64
+
+# The device's font is ASCII. German umlauts and the sharp s have conventional
+# two-letter forms; everything else falls back to stripping accents.
+_TRANSLITERATIONS = {
+    "ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
+    "Ä": "Ae", "Ö": "Oe", "Ü": "Ue",
+    "–": "-", "—": "-", "‘": "'", "’": "'", "“": '"', "”": '"', "…": "...",
+}
+
+
+def ascii_text(text: str) -> str:
+    """Map `text` into the ASCII the device's font can actually draw.
+
+    Dropping what it cannot draw -- which is what this used to do -- makes a
+    pad's name a lie: "Müller" arrives as "MLLER" and reads as a different
+    word. So each character is transliterated instead, and anything with no
+    ASCII form at all becomes "?" rather than vanishing.
+    """
+    out = []
+    for char in text:
+        if 32 <= ord(char) < 127:
+            out.append(char)
+            continue
+        mapped = _TRANSLITERATIONS.get(char)
+        if mapped is None:
+            stripped = unicodedata.normalize("NFKD", char)
+            mapped = "".join(c for c in stripped if 32 <= ord(c) < 127)
+        out.append(mapped or "?")
+    return "".join(out)
+
+
+def scroll_seconds(text: str) -> float:
+    """How long `text` takes to cross the grid, for callers timing a repaint."""
+    return SCROLL_LEAD_IN + SCROLL_SECONDS_PER_CHAR * len(text)
 
 GRID = [10 * row + col for row in range(1, 9) for col in range(1, 9)]
 TOP_ROW = list(range(91, 99))
@@ -120,14 +167,23 @@ class Launchpad:
         self._flush([[_RGB, pad, 0, 0, 0] for pad in GRID + TOP_ROW + RIGHT_COL + [LOGO]])
 
     # -- input --------------------------------------------------------
-    def scroll_text(self, text: str, colour: int = 3, speed: int = 24) -> None:
+    def scroll_text(self, text: str, colour: int = 3, speed: int = SCROLL_SPEED) -> str:
         """Scroll text across the whole grid in the device's own font.
 
         The Launchpad renders text itself, which is the only way to label a pad
         on hardware that has no screen. It takes the grid over while it runs.
+
+        Returns what actually went to the grid, which is what the caller should
+        time and log: the font is ASCII-only and one message carries a bounded
+        payload, so the rendered string can differ from the one asked for.
         """
-        payload = [ord(c) for c in text if 0 < ord(c) < 128]
-        self._sysex(0x07, 0x00, speed, colour, *payload[:64])
+        rendered = ascii_text(text)
+        if len(rendered) > SCROLL_MAX:
+            # Cut visibly, not quietly. A name that simply stops mid-word, with
+            # nothing to say it was cut, is worse than no name at all.
+            rendered = rendered[:SCROLL_MAX - 1] + ">"
+        self._sysex(0x07, 0x00, speed, colour, *(ord(c) for c in rendered))
+        return rendered
 
     def stop_text(self) -> None:
         self._sysex(0x07)

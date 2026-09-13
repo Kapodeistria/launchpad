@@ -6,7 +6,8 @@ when missing -- a background launchd agent has no UI to prompt with.
 """
 from __future__ import annotations
 
-from .apps import OUTLOOK_APP, TEAMS_APP, AppSource, dock_badges, outlook_unread
+from .apps import OUTLOOK_APP, AppSource, dock_badges, outlook_unread
+from .config import CONFIG, TILES
 from .focus import iterm_sessions
 
 OSASCRIPT = "/usr/bin/osascript"
@@ -43,6 +44,8 @@ def _check_iterm() -> tuple[bool, str, str]:
 
 
 def _check_outlook() -> tuple[bool, str, str]:
+    if not any(t.app == OUTLOOK_APP for t in TILES):
+        return True, "Outlook not configured, skipped", ""
     unread = outlook_unread()
     if unread is None:
         return False, "Outlook not reachable", (
@@ -55,14 +58,23 @@ def _check_accessibility() -> tuple[bool, str, str]:
     if not AppSource.accessibility_ok():
         return False, "Accessibility NOT granted", ACCESSIBILITY_FIX
     badges = dock_badges()
-    teams = badges.get(TEAMS_APP)
-    detail = f"Teams badge = {teams}" if teams is not None else "no Teams badge right now"
+    seen = [f"{t.label} {badges[t.app]}" for t in TILES if badges.get(t.app)]
+    detail = ", ".join(seen) if seen else "no app is showing a badge right now"
     return True, f"Accessibility granted ({detail})", ""
+
+
+def _check_apps() -> tuple[bool, str, str]:
+    """Report the configured row, so a wrong app name is visible before it is
+    a dark pad you cannot explain."""
+    where = CONFIG if CONFIG.exists() else "built-in default"
+    row = ", ".join(f"{t.label}[{t.role}]" for t in TILES)
+    return True, f"{len(TILES)} tiles from {where}: {row}", ""
 
 
 CHECKS = [
     ("MIDI device", _check_midi),
     ("iTerm", _check_iterm),
+    ("App row", _check_apps),
     ("Outlook", _check_outlook),
     ("Accessibility", _check_accessibility),
 ]
@@ -86,8 +98,8 @@ def run_doctor() -> int:
     if failures:
         print(
             f"\n{failures} check(s) failed. The board still runs without them:\n"
-            "  no Accessibility -> Teams is a plain launcher and the Codex tile\n"
-            "  raises the app rather than a specific window. Everything else works."
+            "  no Accessibility -> unread counts stay dark and apps are plain\n"
+            "  launchers. Sessions, states and focusing all work regardless."
         )
     else:
         print("\nAll checks passed.")

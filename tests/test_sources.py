@@ -83,15 +83,16 @@ def test_a_truncated_log_is_not_replayed_from_a_stale_offset(tmp_path):
     assert sessions["claude:s1"].state is State.IDLE
 
 
-def rollout(tmp_path, name, *, originator="Codex Desktop", source=None, events=()):
-    day = tmp_path / "2026" / "09" / "08"
+def rollout(tmp_path, name, *, originator="Codex Desktop", source=None, events=(),
+            day="2026/09/08"):
+    day = tmp_path.joinpath(*day.split("/"))
     day.mkdir(parents=True, exist_ok=True)
     path = day / f"rollout-{name}.jsonl"
     meta = {
         "type": "session_meta",
         "payload": {
             "session_id": name,
-            "cwd": "/Users/ck/Dev/myai",
+            "cwd": "/Users/you/Dev/demo",
             "originator": originator,
             "source": source if source is not None else "vscode",
         },
@@ -127,6 +128,24 @@ def test_codex_threads_are_labelled_with_what_you_typed(tmp_path):
     assert label == "fix the login bug", "XML context blocks are not the prompt"
 
 
+def test_pasted_attachments_are_not_mistaken_for_the_prompt(tmp_path):
+    # Codex injects an attachment dump as a user turn. It is markdown, not XML,
+    # and it can sit hundreds of lines ahead of what you actually typed.
+    filler = [user_message("<environment_context>ctx</environment_context>")] * 80
+    rollout(
+        tmp_path,
+        "t1",
+        events=[
+            user_message("# Files pasted by the user:\n\n## pasted-text.txt"),
+            *filler,
+            user_message("verarbeite das workshop transcript"),
+        ],
+    )
+    sessions: dict = {}
+    CodexSource(tmp_path).poll(sessions)
+    assert sessions["codex:t1"].label == "verarbeite das workshop transcript"
+
+
 def test_codex_task_events_drive_busy_state(tmp_path):
     rollout(tmp_path, "t1", events=[event_msg("task_started")])
     sessions: dict = {}
@@ -148,6 +167,19 @@ def test_codex_cli_and_desktop_land_in_different_zones(tmp_path):
     sessions: dict = {}
     CodexSource(tmp_path).poll(sessions)
     assert sessions["codex:cli"].kind is Kind.CODEX_CLI
+
+
+def test_a_thread_started_days_ago_is_still_tracked(tmp_path):
+    # Codex keeps appending to the transcript created on the day the thread
+    # *started*, so a thread you opened last week and are typing in right now
+    # lives in an old day-directory. Only mtime says what is live.
+    rollout(tmp_path, "old", day="2026/01/02", events=[event_msg("task_started")])
+    for n in range(3, 9):
+        rollout(tmp_path, f"newer{n}", day=f"2026/09/0{n}")
+    sessions: dict = {}
+    CodexSource(tmp_path).poll(sessions)
+    assert "codex:old" in sessions, "long-lived thread fell out of the scan window"
+    assert sessions["codex:old"].state is State.WORKING
 
 
 def test_prune_drops_silent_sessions(tmp_path):

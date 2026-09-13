@@ -23,6 +23,9 @@ CODEX_SESSIONS = Path.home() / ".codex" / "sessions"
 
 # A session disappears from the grid once it has been silent this long.
 DEFAULT_TTL = 3 * 3600
+# How often the whole Codex archive is re-walked looking for transcripts that
+# have come back to life. Between sweeps only the already-live ones are re-read.
+SWEEP_INTERVAL = 5.0
 
 # Claude hook event -> resulting state. Events not listed only refresh liveness.
 _CLAUDE_STATES = {
@@ -90,12 +93,19 @@ class ClaudeSource:
         sess.seen = float(evt.get("ts") or time.time())
 
 
-def _thread_title(path: Path, limit: int = 60) -> str:
+# Context Codex injects as if you had typed it. XML-tagged blocks are the
+# environment and plugin lists; the markdown-headed ones are pasted attachments
+# and AGENTS.md dumps. Neither is a prompt, and a pad labelled "# Files pasted
+# by the user:" tells you nothing about which thread it is.
+_SYNTHETIC_PREFIXES = ("<", "# Files pasted by the user", "# AGENTS.md instructions")
+
+
+def _thread_title(path: Path, limit: int = 400) -> str:
     """First thing you actually typed in a Codex thread, used as its label.
 
-    The transcript opens with developer/system messages and synthetic context
-    blocks wrapped in XML tags; the first `user` message whose text does not
-    start with "<" is the real prompt.
+    The transcript opens with developer/system messages and injected context,
+    and an attachment dump can push the real prompt hundreds of lines in, so
+    the scan reads well past the header before giving up.
     """
     try:
         with path.open("r", encoding="utf-8", errors="replace") as fh:
@@ -108,9 +118,10 @@ def _thread_title(path: Path, limit: int = 60) -> str:
                 payload = json.loads(line).get("payload", {})
                 for part in payload.get("content", []):
                     text = (part.get("text") or "").strip()
-                    if text and not text.startswith("<"):
-                        first = text.splitlines()[0].strip()
-                        return first[:57] + "..." if len(first) > 60 else first
+                    if not text or text.startswith(_SYNTHETIC_PREFIXES):
+                        continue
+                    first = text.splitlines()[0].strip()
+                    return first[:57] + "..." if len(first) > 60 else first
     except (OSError, ValueError, KeyError, TypeError):
         pass
     return ""
@@ -124,6 +135,8 @@ class CodexSource:
         self.ttl = ttl
         self._offsets: dict[Path, int] = {}
         self._meta: dict[Path, dict | None] = {}
+        self._live: set[Path] = set()
+        self._last_sweep = 0.0
 
     def poll(self, sessions: dict[str, Session]) -> None:
         cutoff = time.time() - self.ttl
@@ -148,17 +161,30 @@ class CodexSource:
             sess.seen = path.stat().st_mtime
 
     def _recent_rollouts(self, cutoff: float) -> list[Path]:
+        """Every transcript touched since `cutoff`, wherever it lives.
+
+        A thread keeps appending to the file created on the day it *started*,
+        so the thread you are typing in right now can sit in a day-directory
+        from last week -- which is why the archive is filtered by mtime and
+        never by the date in the path. The full walk is only a few
+        milliseconds, but it grows with the archive, so it runs on its own
+        cadence and the files it turned up are re-checked on every poll in
+        between.
+        """
         if not self.root.exists():
             return []
+        now = time.monotonic()
+        if now - self._last_sweep >= SWEEP_INTERVAL:
+            self._last_sweep = now
+            self._live = set(self.root.glob("*/*/*/rollout-*.jsonl"))
         found = []
-        # Only walk the last few day-directories rather than the whole archive.
-        for day_dir in sorted(self.root.glob("*/*/*"), reverse=True)[:4]:
-            for path in day_dir.glob("rollout-*.jsonl"):
-                try:
-                    if path.stat().st_mtime >= cutoff:
-                        found.append(path)
-                except OSError:
-                    continue
+        for path in sorted(self._live):
+            try:
+                if path.stat().st_mtime >= cutoff:
+                    found.append(path)
+            except OSError:
+                continue
+        self._live = set(found)
         return found
 
     def _meta_for(self, path: Path) -> dict | None:

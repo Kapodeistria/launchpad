@@ -1,0 +1,58 @@
+# The app row along the bottom of the board.
+#
+# Copy to ~/.launchpad/apps.toml and edit. Without it, the built-in row is
+# used: Claude, ChatGPT/Codex, Outlook, Teams, Proton Mail, WhatsApp.
+#
+# Tiles appear left to right in the order they are written here. `name` is the
+# macOS application name -- exactly as in /Applications, since it is both what
+# gets launched and what the Dock badge is matched against.
+#
+#   role = "claude"    Claude Code sessions rise out of this tile, and its own
+#                      Dock badge blinks amber on the tile, since the column
+#                      above it is taken.
+#   role = "codex"     Codex threads rise out of it; it breathes while one works.
+#   role = "messages"  Unread climbs the column above it as a level meter:
+#                      1-3 unread is one pad, 251+ fills all seven.
+#   role = "plain"     A launcher and nothing more.  (the default)
+#
+# `colour` is the app's brand hex, rescaled for the LEDs with the brightest
+# channel pushed to full. That translation is rough -- a hue with a strong
+# third channel washes out, which is how Claude's orange first came out salmon
+# and WhatsApp's green came out turquoise -- so a colour may also be given as
+# an explicit device-range triple, e.g. colour = [0, 127, 0].
+#
+# There are eight columns. Every tile takes one, terminal tabs take one, and
+# the Claude and Codex strips each take one more if no tile hosts them. Six
+# tiles is the comfortable maximum; the daemon says so if you overrun it.
+
+[[tile]]
+name = "Claude"
+role = "claude"
+colour = [127, 48, 0]      # Claude orange #D97757, with the blue removed
+
+[[tile]]
+name = "ChatGPT"           # ChatGPT.app embeds Codex, so one bundle, one tile
+label = "ChatGPT / Codex"
+role = "codex"
+colour = "#FFFFFF"
+
+[[tile]]
+name = "Microsoft Outlook"
+label = "Outlook"
+role = "messages"
+colour = "#0078D4"
+
+[[tile]]
+name = "Slack"
+role = "messages"
+colour = "#611F69"
+
+[[tile]]
+name = "Signal"
+role = "messages"
+colour = "#3A76F0"
+
+[[tile]]
+name = "Spotify"
+role = "plain"
+colour = "#1DB954"

@@ -133,3 +133,47 @@ def test_a_raising_handler_does_not_kill_the_reader():
     device.on_press(lambda pad, _held: handler(pad))
     device._reader.join(timeout=2)
     assert seen == [81, 82], "one bad press must not stop later ones"
+
+
+def test_the_font_never_silently_swallows_a_letter():
+    # Dropping what the ASCII font cannot draw made a name a different word:
+    # "Müller" arrived as "MLLER".
+    from launchpad.device import ascii_text
+
+    assert ascii_text("Müller") == "Mueller"
+    assert ascii_text("Grüße") == "Gruesse"
+    assert ascii_text("café") == "cafe"
+    assert ascii_text("naïve résumé") == "naive resume"
+    # No ASCII form at all: a visible placeholder, never a disappearance.
+    assert ascii_text("日本 x") == "?? x"
+    assert ascii_text("plain ascii") == "plain ascii"
+    assert len(ascii_text("🙂🙂")) == 2
+
+
+def test_a_name_too_long_for_one_message_is_cut_visibly(lp):
+    from launchpad.device import SCROLL_MAX, ascii_text
+
+    shown = lp.scroll_text("A" * 200)
+    assert len(shown) == SCROLL_MAX
+    assert shown.endswith(">"), "a cut has to be visible in the name itself"
+    assert ascii_text(shown[:-1]) == "A" * (SCROLL_MAX - 1)
+
+
+def test_the_wait_covers_the_whole_scroll():
+    # The old ceiling repainted the board over text that was still running,
+    # which cut long names off mid-word.
+    from launchpad.device import SCROLL_MAX, scroll_seconds
+
+    assert scroll_seconds("A" * SCROLL_MAX) > scroll_seconds("A" * 10) > 0
+    assert scroll_seconds("A" * SCROLL_MAX) > 12.0, "no artificial ceiling"
+
+
+def test_doctor_reports_without_hardware(monkeypatch):
+    # It imports from three other modules, which is how it quietly broke once.
+    import launchpad.doctor as doctor
+
+    monkeypatch.setattr(doctor, "iterm_sessions", dict)
+    monkeypatch.setattr(doctor, "outlook_unread", lambda: None)
+    monkeypatch.setattr(doctor, "dock_badges", dict)
+    monkeypatch.setattr(doctor.AppSource, "accessibility_ok", staticmethod(lambda: False))
+    assert doctor.run_doctor() == 0
