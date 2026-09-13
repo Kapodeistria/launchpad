@@ -352,3 +352,7 @@ looking at the device.
 * Only iTerm is supported for discovery and focus; other terminals would need
   their own equivalent of the `tty` lookup.
 * Sessions silent for more than 3 hours drop off the grid (`DEFAULT_TTL`).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
