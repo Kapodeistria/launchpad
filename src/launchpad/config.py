@@ -16,13 +16,16 @@ Roles decide what a tile does and what happens in the column above it:
 
 * ``claude``   -- Claude Code sessions rise out of it; its Dock badge blinks on
   the tile itself, since the column is taken.
+* ``grok``     -- Grok Bot agents rise out of it. Sit this tile between Claude
+  and Codex. Pads blink white when an agent has a reply waiting.
 * ``codex``    -- Codex threads rise out of it, and it breathes while one works.
 * ``messages`` -- unread climbs the column above it as a level meter.
 * ``plain``    -- a launcher and nothing more.
 
 There is room for eight columns. Every tile takes one, the plain-terminal strip
-takes one, and the Claude and Codex strips each take one if no tile of that
-role gives them a home -- which is what `check` counts.
+takes one, and the Claude, Grok and Codex strips each take one if no tile of
+that role gives them a home -- which is what `check` counts. With all three
+hosted, seven tiles fills the board.
 """
 from __future__ import annotations
 
@@ -35,7 +38,10 @@ LAUNCHPAD_HOME = Path(os.environ.get("LAUNCHPAD_HOME", Path.home() / ".launchpad
 CONFIG = LAUNCHPAD_HOME / "apps.toml"
 
 COLUMNS = 8
-ROLES = ("claude", "codex", "messages", "plain")
+ROLES = ("claude", "grok", "codex", "messages", "plain")
+# Session strips that need a column of their own, hosted by a tile of this
+# role or else falling back to a free column. Order matches the default row.
+STRIP_ROLES = ("claude", "grok", "codex")
 
 
 @dataclass(frozen=True)
@@ -75,6 +81,9 @@ def device_rgb(colour: str | list[int] | tuple[int, int, int]) -> tuple[int, int
 # literal brand hex, for the reason `device_rgb` explains.
 DEFAULT_TILES: tuple[Tile, ...] = (
     Tile("app:claude", "Claude", "Claude", "claude", (127, 48, 0)),
+    # Cool violet: full blue, no green, more blue than red. Stays off Claude
+    # orange (127, 48, 0), Codex grey-white (110, 110, 110), and alert white.
+    Tile("app:grok", "Grok Bot", "Grok Bot", "grok", (96, 0, 127)),
     # ChatGPT.app embeds Codex as a framework, so one bundle, one tile.
     Tile("app:codex", "ChatGPT", "ChatGPT / Codex", "codex", (110, 110, 110)),
     Tile("app:outlook", "Microsoft Outlook", "Outlook", "messages", (0, 72, 127)),
@@ -117,12 +126,12 @@ def check(tiles: tuple[Tile, ...]) -> None:
     keys = [t.key for t in tiles]
     if len(set(keys)) != len(keys):
         raise ValueError("two tiles share a key; give one an explicit 'key'")
-    for role in ("claude", "codex"):
+    for role in STRIP_ROLES:
         if sum(1 for t in tiles if t.role == role) > 1:
             raise ValueError(f"only one tile may have role '{role}'")
     # A column each for the tiles, one for the terminal strip, and one more for
-    # each of Claude and Codex if no tile of that role hosts them.
-    homeless = sum(1 for role in ("claude", "codex")
+    # each of Claude, Grok and Codex if no tile of that role hosts them.
+    homeless = sum(1 for role in STRIP_ROLES
                    if not any(t.role == role for t in tiles))
     needed = len(tiles) + 1 + homeless
     if needed > COLUMNS:

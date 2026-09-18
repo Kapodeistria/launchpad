@@ -64,19 +64,36 @@ def test_only_one_tile_may_host_each_session_strip():
             '[[tile]]\nname = "A"\nrole = "claude"\n'
             '[[tile]]\nname = "B"\nrole = "claude"\n'
         ))
+    with pytest.raises(ValueError, match="only one"):
+        parse(toml(
+            '[[tile]]\nname = "A"\nrole = "grok"\n'
+            '[[tile]]\nname = "B"\nrole = "grok"\n'
+        ))
+
+
+def test_role_grok_is_accepted():
+    (tile,) = parse(toml('[[tile]]\nname = "Grok Bot"\nrole = "grok"\n'))
+    assert tile.role == "grok"
+    assert tile.app == "Grok Bot"
+    assert tile.key == "app:grok-bot"
 
 
 def test_a_row_that_cannot_fit_the_board_says_how_much_to_remove():
-    # Eight tiles leave no column for the terminal strip, let alone the two
+    # Eight tiles leave no column for the terminal strip, let alone the three
     # session strips that have no tile of their own here.
     rows = "".join(f'[[tile]]\nname = "A{i}"\n' for i in range(8))
-    with pytest.raises(ValueError, match="remove 3"):
+    with pytest.raises(ValueError, match="remove 4"):
         parse(toml(rows))
 
 
-def test_the_shipped_row_fits_with_room_to_spare():
+def test_the_shipped_row_fits():
     check(DEFAULT_TILES)
     assert len(DEFAULT_TILES) + 1 <= COLUMNS
+
+
+def test_the_shipped_row_puts_grok_between_claude_and_codex():
+    assert [t.role for t in DEFAULT_TILES[:3]] == ["claude", "grok", "codex"]
+    assert DEFAULT_TILES[1].app == "Grok Bot"
 
 
 def test_a_missing_config_falls_back_to_the_shipped_row(tmp_path):

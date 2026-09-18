@@ -1,9 +1,9 @@
 # launchpad
 
-Your live Claude Code and Codex sessions, on a Novation Launchpad Mini MK3.
-A pad per session: it **breathes** while the agent is working, **blinks white**
-when it is blocked waiting on you, and glows dim when idle. Press a pad to jump
-straight to that session's terminal tab.
+Your live Claude Code, Grok Bot and Codex sessions, on a Novation Launchpad Mini
+MK3. A pad per session: it **breathes** while the agent is working, **blinks
+white** when it is blocked waiting on you, and glows dim when idle. Press a pad
+to jump straight to that session.
 
 ## Requirements
 
@@ -14,8 +14,8 @@ straight to that session's terminal tab.
 * **iTerm2** — the only terminal supported for discovering and focusing tabs.
   Everything else still works without it; you just cannot jump to a session.
 * **[uv](https://docs.astral.sh/uv/)** and Python 3.13.
-* **Claude Code** and/or the **ChatGPT desktop app** — whichever you use. The
-  board is useful with either alone.
+* **Claude Code**, **Grok Bot** and/or the **ChatGPT desktop app** — whichever
+  you use. The board is useful with any of them alone.
 
 No account, key or token is involved anywhere: everything is read from local
 files, the process table, and AppleScript on your own machine.
@@ -23,28 +23,29 @@ files, the process table, and AppleScript on your own machine.
 ## The board
 
 ```
-        [C]     [a]                 [.]      ◄ strip heads
+        [C] [g] [a]             [.]      ◄ strip heads
       ┌────────────────────────────────┐
-   8  │ C   a   .   .   .   .   .   .  │  ◄ Claude   orange   [!] 89
-   7  │ C   a   .   .   .   .   .   .  │  ◄ Codex    white/cyan
-   6  │ C   a   .   .   .   .   .   .  │  ◄ other terminals  grey
-   5  │ C   a   .   ▓   .   .   .   .  │
-   4  │ C   a   .   ▓   .   .   .   .  │  ▓ unread, climbing out
-   3  │ C   a   ▓   ▓   .   .   .   .  │    of its own tile
-   2  │ C   a   ▓   ▓   ▓   .   .   .  │
+   8  │ C   g   a   .   .   .   .   .  │  ◄ Claude   orange   [!] 89
+   7  │ C   g   a   .   .   .   .   .  │  ◄ Grok     violet
+   6  │ C   g   a   .   .   .   .   .  │  ◄ Codex    white/cyan
+   5  │ C   g   a   .   ▓   .   .   .  │  ◄ other terminals  grey
+   4  │ C   g   a   .   ▓   .   .   .  │  ▓ unread, climbing out
+   3  │ C   g   a   ▓   ▓   .   .   .  │    of its own tile
+   2  │ C   g   a   ▓   ▓   ▓   .   .  │
       ├────────────────────────────────┤
-   1  │CLA CDX OUT TMS PRO  WA  .   .  │  ◄ app launchers     [⟳] 19
+   1  │CLA GRK CDX OUT TMS PRO  WA  .  │  ◄ app launchers     [⟳] 19
       └────────────────────────────────┘
 ```
 
-One strip per app. Claude Code sessions rise out of the Claude tile, Codex
-threads rise out of the Codex tile, and plain terminal tabs — which have no
-tile — take the far right column. Each strip fills from the bottom up, so a
-new session always lands on top of the last one and the oldest is nearest your
-thumb. Codex CLI and Codex app share one strip: the CLI zone sat permanently
-dark, and desktop threads are what actually need the room.
+One strip per app. Claude Code sessions rise out of the Claude tile, Grok Bot
+agents rise out of the Grok tile (between Claude and Codex), Codex threads rise
+out of the Codex tile, and plain terminal tabs — which have no tile — take the
+far right column. Each strip fills from the bottom up, so a new session always
+lands on top of the last one and the oldest is nearest your thumb. Codex CLI
+and Codex app share one strip: the CLI zone sat permanently dark, and desktop
+threads are what actually need the room.
 
-WhatsApp is the last tile of the row; nothing rises out of column 6, so it has
+WhatsApp is the last tile of the row; nothing rises out of column 7, so it has
 nothing above it to be mistaken for.
 
 ## When there are more sessions than pads
@@ -78,11 +79,12 @@ The **bottom row** carries one launcher per app, each in its own brand colour:
 | Pad | App | Colour | Lit when |
 |-----|-----|--------|----------|
 | 1 | Claude | Claude orange | blinks amber on its Dock badge |
-| 2 | ChatGPT / Codex | white `#FFFFFF` | breathes while a Codex thread works |
-| 3 | Outlook | Microsoft blue `#0078D4` | always; unread counts above it |
-| 4 | Teams | Teams indigo `#6264A7` | always; unread counts above it |
-| 5 | Proton Mail | Proton violet `#6D4AFF` | always; unread counts above it |
-| 6 | WhatsApp | WhatsApp green `#25D366` → full green | always; unread counts above it |
+| 2 | Grok Bot | cool violet `(96, 0, 127)` | always when running |
+| 3 | ChatGPT / Codex | white `#FFFFFF` | breathes while a Codex thread works |
+| 4 | Outlook | Microsoft blue `#0078D4` | always; unread counts above it |
+| 5 | Teams | Teams indigo `#6264A7` | always; unread counts above it |
+| 6 | Proton Mail | Proton violet `#6D4AFF` | always; unread counts above it |
+| 7 | WhatsApp | WhatsApp green `#25D366` → full green | always; unread counts above it |
 
 ## Unread, as a column
 
@@ -111,10 +113,11 @@ The **round button at the head** of each of those columns is lit whenever that
 app has anything waiting, so the row of heads reads as "which apps want you" at
 a glance. Any pad of the column opens the app, tile and head included.
 
-Claude and Codex have sessions above them rather than a free column, so the
-Claude tile keeps the amber blink for its badge. The Codex tile does not:
+Claude, Grok and Codex have sessions above them rather than a free column, so
+the Claude tile keeps the amber blink for its badge. The Codex tile does not:
 ChatGPT's Dock badge sits in the high double digits for weeks at a time, and
-letting it blink would hide the one thing that tile is for.
+letting it blink would hide the one thing that tile is for. The Grok tile is a
+launcher; unread/awaiting lives on the pads themselves as a white blink.
 
 ChatGPT and Codex are **one tile**, because they are one bundle: `ChatGPT.app`
 embeds Codex as a framework, so two tiles launched the same process and merely
@@ -138,8 +141,8 @@ The round logo button reflects the most urgent state anywhere on the board.
 ## The app row is yours
 
 The tiles along the bottom are configuration, not code. Without a config file
-the built-in row is Claude, ChatGPT/Codex, Outlook, Teams, Proton Mail and
-WhatsApp — which is one person's dock, and probably not yours.
+the built-in row is Claude, Grok Bot, ChatGPT/Codex, Outlook, Teams, Proton Mail
+and WhatsApp — which is one person's dock, and probably not yours.
 
 ```sh
 cp apps.example.toml ~/.launchpad/apps.toml   # then edit
@@ -155,16 +158,18 @@ colour = "#611F69"    # brand hex, rescaled for the LEDs
 | Role | What the tile does |
 |------|--------------------|
 | `claude` | Claude Code sessions rise out of it; its own badge blinks on the tile |
+| `grok` | Grok Bot agents rise out of it; pads blink white when a bot has a reply |
 | `codex` | Codex threads rise out of it; breathes while one works |
 | `messages` | unread climbs the column above it as a level meter |
 | `plain` | a launcher and nothing more (the default) |
 
 Tiles appear left to right in the order written. There are eight columns: every
-tile takes one, terminal tabs take one, and the Claude and Codex strips each
-take one more if no tile of that role hosts them — so six tiles is the
-comfortable maximum, and the daemon tells you plainly if you overrun it. A
-config it cannot parse is reported and ignored rather than being fatal: a typo
-in the app row must not be what stops you seeing that a session is blocked.
+tile takes one, terminal tabs take one, and the Claude, Grok and Codex strips
+each take one more if no tile of that role hosts them — so with all three
+hosted, seven tiles fills the board, and the daemon tells you plainly if you
+overrun it. A config it cannot parse is reported and ignored rather than being
+fatal: a typo in the app row must not be what stops you seeing that a session
+is blocked.
 
 `uv run launchpad doctor` prints the row it actually loaded, which is the
 fastest way to catch an app name that does not match what macOS calls it.
@@ -197,8 +202,15 @@ any press dismisses it.
 | blinking red  | error   | last turn failed                                |
 | dark          | —       | nothing on that pad                             |
 
-Orange = Claude Code, white = Codex threads, cyan = Codex CLI, grey = plain
-terminal.
+Orange = Claude Code, violet = Grok Bot, white = Codex threads, cyan = Codex
+CLI, grey = plain terminal.
+
+Grok Bot has no LED-safe brand colour (the app is black and white), so the
+strip uses a **cool violet** — device RGB `(96, 0, 127)`, palette 49 for any
+breath. Full blue, no green, more blue than red: away from Claude orange, from
+Codex grey-white, and from the alert blink (white). Overflow still flashes
+magenta (palette 53) on the strip head, a neighbour of that purple rather than
+the same index.
 
 Claude's orange runs full red with **no blue at all**: any blue washes an orange
 toward pink, which is what made the literal brand hex read as muted salmon on
@@ -206,23 +218,24 @@ the LEDs. WhatsApp's green is the same trap from the other side — the brand he
 is roughly half blue, which came out turquoise — so that tile runs pure green.
 
 Because Claude's zone is orange, *blocked on you* blinks **white** rather than
-amber — an urgent pad has to stand out among orange ones.
+amber — an urgent pad has to stand out among orange ones. Grok uses the same
+white blink when an agent has an unread reply or is awaiting the user.
 
 Codex desktop threads breathe in that same white, to match their tile. Hue
 therefore no longer separates them from an alert; the **animation** does. An
 alert blinks hard, a busy pad breathes, an idle one sits steady, and nothing
-except an alert ever blinks white. A test asserts exactly that — no zone may
-flash — so it cannot quietly regress. Plain terminals stay grey, which keeps
-them the dimmer of the two neutral zones, and Codex CLI stays cyan so a
-terminal thread and a desktop thread remain distinguishable inside the strip
-they share.
+except an alert ever blinks white. A test asserts that no zone *other than
+Codex app* may breathe in the alert-white palette index, so Grok cannot quietly
+regress into a collision. Plain terminals stay grey, which keeps them the
+dimmer of the two neutral zones, and Codex CLI stays cyan so a terminal thread
+and a desktop thread remain distinguishable inside the strip they share.
 
 For a tab with no agent in it, *working* means a foreground job is running:
 something other than the shell itself owns the tty's foreground process group.
 
 ## How state is detected
 
-The two tools expose state differently, so there are two sources:
+The tools expose state differently, so there are several sources:
 
 * **Claude Code** has a hook system. `hooks/launchpad-hook.sh` is registered for
   seven lifecycle events and appends them to `~/.launchpad/events.log`. Because
@@ -246,6 +259,17 @@ The two tools expose state differently, so there are two sources:
   A thread keeps appending to the transcript created on the day it *started*,
   so the one you are typing in right now can live in a week-old day-directory:
   the archive is filtered by mtime, never by the date in the path.
+* **Grok Bot** persists its sidebar roster as JSON blobs under
+  `~/Library/Application Support/Grok Bot/sand-client-persistence/`. Filenames
+  are RFC4648 base32 (no padding) of a UTF-8 key; `GrokSource` scans for the
+  key ending `roster.last-roster` (preferring a populated file, then newest
+  mtime). Agents with `isHiddenFromSidebar` are skipped. `hasUnread`,
+  `unreadCount > 0`, or a truthy `awaitingUserResponse` maps to *waiting*
+  (white blink — a bot has a reply); everything else is idle. There is no
+  reliable "currently generating" signal in the roster, so Grok pads do not
+  breathe. Override the directory with `LAUNCHPAD_GROK_PERSISTENCE` for tests.
+  A missing directory, an undecodable filename, or malformed JSON is skipped
+  rather than crashing the daemon. No Accessibility permission is required.
 
 ## Permissions
 
@@ -326,7 +350,7 @@ for arbitrary applications.
 uv run pytest
 ```
 
-79 tests, no hardware required — the MIDI ports are faked, so pad addressing,
+96 tests, no hardware required — the MIDI ports are faked, so pad addressing,
 LED diffing, press dispatch, zone assignment and the source parsers are all
 checked without a Launchpad attached. Worth running before touching the driver:
 the parts most likely to break are the ones otherwise only verifiable by
@@ -343,6 +367,13 @@ looking at the device.
   `codex://threads/<id>` route found in the app bundle — neither the window nor
   the accessibility tree is any help (there is one window, titled "ChatGPT",
   and Electron exposes an empty AX tree), but the URL scheme is.
+* **Grok Bot pad press tries a deep link, then opens the app.** The roster
+  gives each agent an id, and a press first runs `open grokbot://agent/<id>`,
+  then `open sand://agent/<id>`, then `open -a 'Grok Bot'`. Those URL schemes
+  are guesses from the persistence layout (`sand-client-persistence`); they
+  are not a confirmed route in the app bundle. If neither scheme is
+  registered, Launch Services fails and the app still comes forward — without
+  focusing a specific agent.
 * **Each strip holds seven sessions.** Beyond that the strip's summary button
   blinks magenta and the lowest-ranked sessions are left off — see *When there
   are more sessions than pads*.

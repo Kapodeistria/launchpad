@@ -1,15 +1,20 @@
 """Discover live agent sessions and their state.
 
-Two independent sources, because the two tools expose state differently:
+Three independent sources, because the tools expose state differently:
 
 * Claude Code has a hook system, so we get exact lifecycle events pushed to an
   append-only log -- including ITERM_SESSION_ID, which is what lets a pad press
   focus the right terminal tab.
 * Codex has no hooks, so we tail its rollout transcripts and read the
   `task_started` / `task_complete` events it already writes.
+* Grok Bot persists its sidebar roster as JSON blobs under Application Support;
+  we decode the roster key from the filenames and map unread / awaiting to
+  "needs you".
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import time
@@ -20,6 +25,11 @@ from .model import Kind, Session, State
 LAUNCHPAD_HOME = Path(os.environ.get("LAUNCHPAD_HOME", Path.home() / ".launchpad"))
 EVENTS_LOG = LAUNCHPAD_HOME / "events.log"
 CODEX_SESSIONS = Path.home() / ".codex" / "sessions"
+GROK_PERSISTENCE = Path(os.environ.get(
+    "LAUNCHPAD_GROK_PERSISTENCE",
+    str(Path.home() / "Library" / "Application Support" / "Grok Bot"
+        / "sand-client-persistence"),
+))
 
 # A session disappears from the grid once it has been silent this long.
 DEFAULT_TTL = 3 * 3600
@@ -250,6 +260,151 @@ class CodexSource:
             elif kind == "task_complete":
                 state = State.IDLE
         return state
+
+
+# Grok Bot stores the sidebar roster as JSON blobs whose filenames are RFC4648
+# base32 (no padding) of a UTF-8 key. The roster key ends with
+# `roster.last-roster`; several account-scoped copies can exist.
+_ROSTER_SUFFIX = "roster.last-roster"
+
+
+def _b32decode_stem(stem: str) -> str | None:
+    """Decode an unpadded RFC4648 base32 filename stem to a UTF-8 key."""
+    padded = stem.upper() + "=" * ((8 - len(stem) % 8) % 8)
+    try:
+        return base64.b32decode(padded).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return None
+
+
+def _as_seconds(value: object) -> float:
+    """Unix seconds, accepting JS milliseconds when the number is huge."""
+    try:
+        ts = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+    if ts > 1e12:
+        ts /= 1000.0
+    return ts
+
+
+def _needs_you(row: dict) -> bool:
+    """Unread or awaiting a reply: a bot has something for you."""
+    if row.get("hasUnread"):
+        return True
+    try:
+        if int(row.get("unreadCount") or 0) > 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return bool(row.get("awaitingUserResponse"))
+
+
+def _roster_rows(path: Path) -> list[dict] | None:
+    """Parse a blob's `value.rows`, or None if the file is unusable."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    value = data.get("value")
+    if not isinstance(value, dict):
+        return None
+    rows = value.get("rows")
+    if not isinstance(rows, list):
+        return None
+    return [row for row in rows if isinstance(row, dict)]
+
+
+class GrokSource:
+    """Reads Grok Bot's local sidebar roster. No Accessibility, no UI scrape.
+
+    Override the persistence directory with ``LAUNCHPAD_GROK_PERSISTENCE`` so
+    tests can feed a fixture of fake ``.blob`` files.
+    """
+
+    def __init__(self, root: Path | None = None) -> None:
+        if root is not None:
+            self.root = Path(root)
+        else:
+            override = os.environ.get("LAUNCHPAD_GROK_PERSISTENCE")
+            self.root = Path(override) if override else GROK_PERSISTENCE
+
+    def poll(self, sessions: dict[str, Session]) -> None:
+        live = self._read_roster()
+        for key in [k for k in sessions if k.startswith("grok:") and k not in live]:
+            del sessions[key]
+        now = time.time()
+        for key, row in live.items():
+            sid = str(row["id"])
+            label = (row.get("name") or "").strip() or sid
+            state = State.WAITING if _needs_you(row) else State.IDLE
+            activity = (
+                _as_seconds(row.get("lastActivityAt"))
+                or _as_seconds(row.get("updatedAt"))
+                or now
+            )
+            sess = sessions.get(key)
+            if sess is None:
+                sess = Session(
+                    key=key, kind=Kind.GROK, session_id=sid,
+                    label=label, state=state, last_event=activity,
+                )
+                sessions[key] = sess
+            else:
+                sess.state = state
+                sess.label = label
+                sess.last_event = activity
+            sess.seen = now
+
+    def _read_roster(self) -> dict[str, dict]:
+        """Visible sidebar rows keyed ``grok:<id>``. Empty if nothing usable."""
+        path = self._pick_roster()
+        if path is None:
+            return {}
+        rows = _roster_rows(path)
+        if rows is None:
+            return {}
+        live: dict[str, dict] = {}
+        for row in rows:
+            if row.get("isHiddenFromSidebar"):
+                continue
+            sid = row.get("id")
+            if not sid:
+                continue
+            live[f"grok:{sid}"] = row
+        return live
+
+    def _pick_roster(self) -> Path | None:
+        """The roster blob to trust, or None when the directory is missing.
+
+        Several account-scoped copies can exist. Prefer one whose rows look
+        populated; among those, the newest mtime wins.
+        """
+        if not self.root.is_dir():
+            return None
+        best: tuple[int, float, Path] | None = None
+        try:
+            blobs = list(self.root.glob("*.blob"))
+        except OSError:
+            return None
+        for path in blobs:
+            key = _b32decode_stem(path.stem)
+            if key is None or not key.endswith(_ROSTER_SUFFIX):
+                continue
+            rows = _roster_rows(path)
+            if rows is None:
+                continue
+            visible = sum(1 for row in rows if row.get("id") and not row.get("isHiddenFromSidebar"))
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                continue
+            score = (1 if visible else 0, mtime, path)
+            if best is None or score[:2] > best[:2]:
+                best = score
+        return None if best is None else best[2]
 
 
 def prune(sessions: dict[str, Session], ttl: int = DEFAULT_TTL) -> None:
