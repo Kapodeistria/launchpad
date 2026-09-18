@@ -5,11 +5,11 @@ grid holds the things there can be many of; the round buttons hold the things
 there is exactly one of.
 
          ┌───────────────────────────┐
-    8    │ C   a                   . │  strip heads: round buttons above
-    :    │ C   a                   . │
-    :    │ C   a                   . │  C  Claude Code   over the CLA tile
-    2    │ C   a                   . │  a  Codex         over the CDX tile
-    1    │CLA CDX OUT TMS PRO WA     │  .  other tabs    far right, no tile
+    8    │ C  g  a                 . │  strip heads: round buttons above
+    :    │ C  g  a                 . │
+    :    │ C  g  a                 . │  C  Claude   g  Grok   a  Codex
+    2    │ C  g  a                 . │  .  other tabs, far right, no tile
+    1    │CLA GRK CDX OUT TMS PRO WA │
          └───────────────────────────┘
 
 The board reads bottom-up, the way a hand reaches it: launchers on the bottom
@@ -24,7 +24,7 @@ is seven pads wide and there can be more sessions than that.
 """
 from __future__ import annotations
 
-from .config import COLUMNS, TILES
+from .config import COLUMNS, STRIP_ROLES, TILES
 from .device import note_for
 from .model import Kind, Session, State
 
@@ -58,13 +58,14 @@ def _strip_columns() -> dict[str, int]:
     """Which column each strip of sessions rises in.
 
     A strip sits above the tile of the app it belongs to. If the configured
-    row has no tile for that app -- someone who runs Codex but not Claude --
-    the strip falls back to a column no tile occupies, so it still has a home.
-    Message tiles never host a strip: their column counts unread instead.
+    row has no tile for that app -- someone who runs Codex but not Claude or
+    Grok -- the strip falls back to a column no tile occupies, so it still
+    has a home. Message tiles never host a strip: their column counts unread
+    instead.
     """
     free = list(range(len(TILES) + 1, COLUMNS + 1))
     columns: dict[str, int] = {}
-    for role in ("claude", "codex"):
+    for role in STRIP_ROLES:
         home = next((c for c, t in enumerate(TILES, start=1) if t.role == role), None)
         columns[role] = home if home is not None else free.pop(0)
     # Plain terminal tabs have no launcher, so they take the last free column,
@@ -80,6 +81,7 @@ _CODEX_STRIP = _strip(column=_COLUMNS["codex"])
 
 ZONES: dict[Kind, list[int]] = {
     Kind.CLAUDE: _strip(column=_COLUMNS["claude"]),
+    Kind.GROK: _strip(column=_COLUMNS["grok"]),
     Kind.CODEX_CLI: _CODEX_STRIP,
     Kind.CODEX_APP: _CODEX_STRIP,
     Kind.SHELL: _strip(column=_COLUMNS["shell"]),
@@ -89,6 +91,7 @@ ZONES: dict[Kind, list[int]] = {
 # more than one kind, since Codex CLI and app share a strip.
 ZONE_SUMMARY: list[tuple[list[int], tuple[Kind, ...]]] = [
     ([note_for(9, ZONES[Kind.CLAUDE][0] % 10)], (Kind.CLAUDE,)),
+    ([note_for(9, ZONES[Kind.GROK][0] % 10)], (Kind.GROK,)),
     ([note_for(9, _CODEX_STRIP[0] % 10)], (Kind.CODEX_CLI, Kind.CODEX_APP)),
     ([note_for(9, ZONES[Kind.SHELL][0] % 10)], (Kind.SHELL,)),
 ]
@@ -138,9 +141,13 @@ def gauge_level(unread: int) -> int:
 # Palette indices.
 _ORANGE, _GREEN, _CYAN, _BLUE, _AMBER = 9, 21, 37, 45, 9
 _RED, _WHITE, _MAGENTA, _GREY = 5, 3, 53, 2
+# Palette 49 is a cool purple on the Mini MK3; 53 is the overflow magenta, so
+# Grok breathes a neighbour rather than the same index the strip head flashes.
+_PURPLE = 49
 
 _ZONE_PALETTE = {
     Kind.CLAUDE: _ORANGE,
+    Kind.GROK: _PURPLE,
     # Codex CLI keeps cyan, so a terminal thread and a desktop thread stay
     # apart inside the strip they share.
     Kind.CODEX_CLI: _CYAN,
@@ -160,6 +167,9 @@ _IDLE_RGB = {
     # Full red, no blue at all: any blue washes an orange toward pink and is
     # what made the literal brand hex read as muted salmon on the LEDs.
     Kind.CLAUDE: ("rgb", 127, 48, 0),
+    # Cool violet, matching the Grok Bot tile: full blue, no green, more blue
+    # than red so it cannot be read as Claude orange or as alert white.
+    Kind.GROK: ("rgb", 96, 0, 127),
     Kind.CODEX_CLI: ("rgb", 0, 80, 90),
     Kind.CODEX_APP: ("rgb", 110, 110, 110),
     Kind.SHELL: ("rgb", 60, 60, 70),

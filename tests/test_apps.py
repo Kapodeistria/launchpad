@@ -37,7 +37,7 @@ def test_tiles_are_built_for_every_configured_app(monkeypatch):
     apps.AppSource().poll(sessions)
 
     assert set(sessions) == {
-        "app:claude", "app:codex",
+        "app:claude", "app:grok", "app:codex",
         "app:outlook", "app:teams", "app:proton", "app:whatsapp",
     }
     assert all(s.kind is Kind.APP for s in sessions.values())

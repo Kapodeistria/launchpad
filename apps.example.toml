@@ -1,7 +1,7 @@
 # The app row along the bottom of the board.
 #
 # Copy to ~/.launchpad/apps.toml and edit. Without it, the built-in row is
-# used: Claude, ChatGPT/Codex, Outlook, Teams, Proton Mail, WhatsApp.
+# used: Claude, Grok Bot, ChatGPT/Codex, Outlook, Teams, Proton Mail, WhatsApp.
 #
 # Tiles appear left to right in the order they are written here. `name` is the
 # macOS application name -- exactly as in /Applications, since it is both what
@@ -10,6 +10,8 @@
 #   role = "claude"    Claude Code sessions rise out of this tile, and its own
 #                      Dock badge blinks amber on the tile, since the column
 #                      above it is taken.
+#   role = "grok"      Grok Bot agents rise out of it. Place this tile between
+#                      Claude and Codex so the three strips sit in that order.
 #   role = "codex"     Codex threads rise out of it; it breathes while one works.
 #   role = "messages"  Unread climbs the column above it as a level meter:
 #                      1-3 unread is one pad, 251+ fills all seven.
@@ -22,13 +24,21 @@
 # an explicit device-range triple, e.g. colour = [0, 127, 0].
 #
 # There are eight columns. Every tile takes one, terminal tabs take one, and
-# the Claude and Codex strips each take one more if no tile hosts them. Six
-# tiles is the comfortable maximum; the daemon says so if you overrun it.
+# the Claude, Grok and Codex strips each take one more if no tile hosts them.
+# With all three hosted, seven tiles fills the board; the daemon says so if
+# you overrun it.
 
 [[tile]]
 name = "Claude"
 role = "claude"
 colour = [127, 48, 0]      # Claude orange #D97757, with the blue removed
+
+[[tile]]
+name = "Grok Bot"
+role = "grok"
+# Cool violet, not Grok's black/white chrome: full blue, no green, more blue
+# than red. Stays off Claude orange, Codex grey-white, and the alert blink.
+colour = [96, 0, 127]
 
 [[tile]]
 name = "ChatGPT"           # ChatGPT.app embeds Codex, so one bundle, one tile

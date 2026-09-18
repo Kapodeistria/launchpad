@@ -17,6 +17,7 @@ class State(str, Enum):
 
 class Kind(str, Enum):
     CLAUDE = "claude"
+    GROK = "grok"
     CODEX_CLI = "codex-cli"
     CODEX_APP = "codex-app"
     SHELL = "shell"     # a terminal tab with no agent in it

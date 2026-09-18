@@ -55,6 +55,16 @@ def focus(session: Session) -> bool:
         if open_url(f"codex://threads/{session.session_id}"):
             return True
         return activate("ChatGPT")
+    if session.kind is Kind.GROK:
+        # Grok Bot's URL scheme is not confirmed in the bundle. Try the
+        # plausible agent deep links, then fall back to bringing the app
+        # forward. `grokbot://agent/<id>` and `sand://agent/<id>` are attempts,
+        # not a documented working route.
+        if open_url(f"grokbot://agent/{session.session_id}"):
+            return True
+        if open_url(f"sand://agent/{session.session_id}"):
+            return True
+        return activate("Grok Bot")
     if session.kind is Kind.APP and session.bundle:
         return activate(session.bundle)
     return False

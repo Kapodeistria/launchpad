@@ -12,7 +12,7 @@ from .focus import focus
 from .iterm import BRIDGE
 from .layout import APP_TILES, ATTENTION_PAD, RESCAN_PAD, ZONE_SUMMARY, Layout
 from .model import Kind, Session, State
-from .sources import ClaudeSource, CodexSource, ItermSource, prune
+from .sources import ClaudeSource, CodexSource, GrokSource, ItermSource, prune
 
 # How often the board is repainted. Presses are read far more often than this
 # (INPUT_INTERVAL) so a pad responds immediately rather than waiting for the
@@ -33,6 +33,7 @@ class Daemon:
         self.sessions: dict[str, Session] = {}
         self.claude = ClaudeSource()
         self.codex = CodexSource()
+        self.grok = GrokSource()
         self.iterm = ItermSource()
         self.apps = AppSource()
         self.layout = Layout()
@@ -50,6 +51,7 @@ class Daemon:
     def refresh(self, force: bool = False) -> None:
         self.claude.poll(self.sessions)
         self.codex.poll(self.sessions)
+        self.grok.poll(self.sessions)
 
         now = time.time()
         if force or now - self._last_scan > SCAN_INTERVAL:
@@ -82,7 +84,7 @@ class Daemon:
         rows = []
         seen: set[str] = set()
         # Ascending, so the printout reads in the same direction as the board:
-        # launchers first, then Claude, Codex, and terminals above them.
+        # launchers first, then Claude, Grok, Codex, and terminals above them.
         for pad, s in sorted(self.pad_map.items()):
             # A message tile also owns every pad of its unread meter; one row.
             if s.key in seen:
@@ -195,7 +197,7 @@ class Daemon:
         threading.Thread(target=worker, daemon=True, name="press-worker").start()
         lp.on_press(lambda pad, held: self._presses.put((pad, held)))
 
-        print("launchpad: watching Claude, Codex, terminals and apps. Ctrl-C to stop.", flush=True)
+        print("launchpad: watching Claude, Grok, Codex, terminals and apps. Ctrl-C to stop.", flush=True)
         try:
             while True:
                 now = time.time()

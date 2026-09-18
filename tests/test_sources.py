@@ -1,11 +1,13 @@
-"""Session discovery: hook events, Codex transcripts, and tty scanning."""
+"""Session discovery: hook events, Codex transcripts, Grok roster, and tty scanning."""
 from __future__ import annotations
 
+import base64
 import json
+import os
 import time
 
 from launchpad.model import Kind, State
-from launchpad.sources import ClaudeSource, CodexSource, ItermSource, prune
+from launchpad.sources import ClaudeSource, CodexSource, GrokSource, ItermSource, prune
 
 
 def write_events(path, events) -> None:
@@ -196,3 +198,132 @@ def test_tab_state_is_read_from_the_title_glyph():
     assert ItermSource._state_from("✳ ready") is State.IDLE
     assert ItermSource._state_from("-zsh") is None
     assert ItermSource._clean("◑ building the thing") == "building the thing"
+
+
+# -- Grok Bot roster --------------------------------------------------------
+
+def _blob_path(root, key: str):
+    stem = base64.b32encode(key.encode("utf-8")).decode("ascii").rstrip("=")
+    return root / f"{stem}.blob"
+
+
+def _roster(rows, schema_version=4):
+    return {"schemaVersion": schema_version, "value": {"rows": rows}}
+
+
+def _write_roster(root, key: str, rows, mtime: float | None = None):
+    path = _blob_path(root, key)
+    path.write_text(json.dumps(_roster(rows)))
+    if mtime is not None:
+        os.utime(path, (mtime, mtime))
+    return path
+
+
+def _agent(sid, name="Launchpad", **fields):
+    row = {
+        "id": sid,
+        "name": name,
+        "hasUnread": False,
+        "unreadCount": 0,
+        "awaitingUserResponse": None,
+        "isHiddenFromSidebar": False,
+        "lastActivityAt": 100,
+        "updatedAt": 100,
+    }
+    row.update(fields)
+    return row
+
+
+_ROSTER_KEY = "sand.client.slice.account.grok%7Cuser_abc.roster.last-roster"
+
+
+def test_grok_discovers_agents_from_a_base32_roster(tmp_path):
+    _write_roster(tmp_path, _ROSTER_KEY, [
+        _agent("uuid-1", "Launchpad", hasUnread=True, unreadCount=1),
+        _agent("uuid-2", "Quiet one"),
+    ])
+    # Noise: undecodable name, unrelated key, malformed JSON.
+    (tmp_path / "not-valid-base32!!.blob").write_text("{}")
+    _write_roster(tmp_path, "sand.client.slice.something.else", [_agent("nope")])
+    (tmp_path / _blob_path(tmp_path, "broken.roster.last-roster").name).write_text("{not json")
+
+    sessions: dict = {}
+    GrokSource(tmp_path).poll(sessions)
+
+    assert set(sessions) == {"grok:uuid-1", "grok:uuid-2"}
+    assert sessions["grok:uuid-1"].kind is Kind.GROK
+    assert sessions["grok:uuid-1"].label == "Launchpad"
+    assert sessions["grok:uuid-1"].state is State.WAITING
+    assert sessions["grok:uuid-2"].state is State.IDLE
+    assert sessions["grok:uuid-2"].label == "Quiet one"
+
+
+def test_grok_maps_unread_and_awaiting_to_waiting(tmp_path):
+    _write_roster(tmp_path, _ROSTER_KEY, [
+        _agent("unread-flag", hasUnread=True),
+        _agent("unread-count", unreadCount=3),
+        _agent("awaiting", awaitingUserResponse="please confirm"),
+        _agent("idle"),
+    ])
+    sessions: dict = {}
+    GrokSource(tmp_path).poll(sessions)
+    assert sessions["grok:unread-flag"].state is State.WAITING
+    assert sessions["grok:unread-count"].state is State.WAITING
+    assert sessions["grok:awaiting"].state is State.WAITING
+    assert sessions["grok:idle"].state is State.IDLE
+    # Roster has no "currently generating" signal, so nothing is WORKING.
+    assert all(s.state is not State.WORKING for s in sessions.values())
+
+
+def test_grok_skips_agents_hidden_from_the_sidebar(tmp_path):
+    _write_roster(tmp_path, _ROSTER_KEY, [
+        _agent("shown", "Visible"),
+        _agent("hidden", "Gone", isHiddenFromSidebar=True, hasUnread=True),
+    ])
+    sessions: dict = {}
+    GrokSource(tmp_path).poll(sessions)
+    assert set(sessions) == {"grok:shown"}
+
+
+def test_grok_drops_agents_that_leave_the_roster(tmp_path):
+    _write_roster(tmp_path, _ROSTER_KEY, [_agent("keep"), _agent("gone")])
+    source = GrokSource(tmp_path)
+    sessions: dict = {}
+    source.poll(sessions)
+    _write_roster(tmp_path, _ROSTER_KEY, [_agent("keep")])
+    source.poll(sessions)
+    assert set(sessions) == {"grok:keep"}
+
+
+def test_grok_tolerates_a_missing_directory(tmp_path):
+    sessions: dict = {}
+    GrokSource(tmp_path / "nope").poll(sessions)
+    assert sessions == {}
+
+
+def test_grok_prefers_a_populated_roster_over_a_newer_empty_one(tmp_path):
+    empty_key = "sand.client.slice.account.grok%7Cuser_empty.roster.last-roster"
+    _write_roster(tmp_path, _ROSTER_KEY, [_agent("real", "The one")], mtime=1000)
+    _write_roster(tmp_path, empty_key, [], mtime=9000)
+    sessions: dict = {}
+    GrokSource(tmp_path).poll(sessions)
+    assert set(sessions) == {"grok:real"}
+
+
+def test_grok_ranks_by_last_activity(tmp_path):
+    _write_roster(tmp_path, _ROSTER_KEY, [
+        _agent("old", lastActivityAt=10),
+        _agent("new", lastActivityAt=1_700_000_000_000),  # JS milliseconds
+    ])
+    sessions: dict = {}
+    GrokSource(tmp_path).poll(sessions)
+    assert sessions["grok:new"].last_event == 1_700_000_000.0
+    assert sessions["grok:old"].last_event == 10.0
+
+
+def test_grok_persistence_path_can_be_overridden(tmp_path, monkeypatch):
+    _write_roster(tmp_path, _ROSTER_KEY, [_agent("via-env")])
+    monkeypatch.setenv("LAUNCHPAD_GROK_PERSISTENCE", str(tmp_path))
+    sessions: dict = {}
+    GrokSource().poll(sessions)
+    assert "grok:via-env" in sessions

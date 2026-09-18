@@ -1,7 +1,7 @@
 [project]
 name = "launchpad"
 version = "0.1.0"
-description = "Live Claude Code + Codex sessions on a Launchpad Mini MK3"
+description = "Live Claude Code, Grok Bot and Codex sessions on a Launchpad Mini MK3"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

@@ -31,13 +31,13 @@ def test_zones_and_the_app_row_do_not_overlap():
 
 
 def test_the_app_row_is_the_bottom_row():
-    assert sorted(APP_TILES.values()) == [11, 12, 13, 14, 15, 16]
+    assert sorted(APP_TILES.values()) == [11, 12, 13, 14, 15, 16, 17]
 
 
 def test_chatgpt_and_codex_share_one_tile():
     # They are literally the same bundle, so two tiles launched one process.
     assert "app:chatgpt" not in APP_TILES
-    assert APP_TILES["app:codex"] == 12
+    assert APP_TILES["app:codex"] == 13
 
 
 def test_whatsapp_sits_at_the_right_end_of_the_launcher_row_and_is_green():
@@ -61,15 +61,30 @@ def test_adjacent_app_tiles_are_visibly_different():
 
 def test_each_zone_is_one_strip_above_its_launcher():
     # One column per app, rising out of that app's own tile: Claude over CLA,
-    # Codex over CDX. Terminals have no tile, so they take the far right.
+    # Grok over GRK, Codex over CDX. Terminals have no tile, so they take the
+    # far right.
     def column(pads):
         cols = {pad % 10 for pad in pads}
         assert len(cols) == 1, "a strip is exactly one column"
         return cols.pop()
 
     assert column(ZONES[Kind.CLAUDE]) == APP_TILES["app:claude"] % 10
+    assert column(ZONES[Kind.GROK]) == APP_TILES["app:grok"] % 10
     assert column(ZONES[Kind.CODEX_APP]) == APP_TILES["app:codex"] % 10
     assert column(ZONES[Kind.SHELL]) == 8
+
+
+def test_the_grok_strip_sits_between_claude_and_codex():
+    def column(pads):
+        cols = {pad % 10 for pad in pads}
+        assert len(cols) == 1
+        return cols.pop()
+
+    claude = column(ZONES[Kind.CLAUDE])
+    grok = column(ZONES[Kind.GROK])
+    codex = column(ZONES[Kind.CODEX_APP])
+    assert claude < grok < codex
+    assert grok == APP_TILES["app:grok"] % 10 == 2
 
 
 def test_strips_fill_bottom_up():
@@ -81,7 +96,7 @@ def test_strips_fill_bottom_up():
 
 
 def test_strips_cover_every_row_above_the_launchers():
-    for kind in (Kind.CLAUDE, Kind.CODEX_APP, Kind.SHELL):
+    for kind in (Kind.CLAUDE, Kind.GROK, Kind.CODEX_APP, Kind.SHELL):
         assert sorted(pad // 10 for pad in ZONES[kind]) == [2, 3, 4, 5, 6, 7, 8]
 
 
@@ -114,6 +129,7 @@ def test_each_kind_lands_in_its_own_zone():
     layout = Layout()
     sessions = {
         "a": make("a", Kind.CLAUDE),
+        "g": make("g", Kind.GROK),
         "b": make("b", Kind.CODEX_CLI),
         "c": make("c", Kind.CODEX_APP),
         "d": make("d", Kind.SHELL),
@@ -199,6 +215,40 @@ def test_claude_is_a_strong_orange():
     assert 0 < green < red, "some green, or it is just red"
 
 
+def test_alert_white_is_not_a_zone_breath_colour():
+    # Codex desktop threads breathe white -- the same palette index the alert
+    # blinks in -- and are told apart by animation. Every other zone, Grok
+    # included, must pick a different index so hue still separates them.
+    from launchpad.layout import _WHITE, _ZONE_PALETTE
+
+    for kind, index in _ZONE_PALETTE.items():
+        if kind is Kind.CODEX_APP:
+            continue
+        assert index != _WHITE, f"{kind} breath collides with alert white"
+
+
+def test_grok_is_a_cool_violet():
+    _, red, green, blue = colour_for(make("g", Kind.GROK, State.IDLE))
+    assert blue == 127, "violet needs full blue to read as cool"
+    assert green == 0, "any green washes violet toward grey-pink"
+    assert 0 < red < blue, "some red, more blue: violet, not magenta-pink"
+    # Adjacent to Claude orange and Codex grey-white on the default row.
+    claude = colour_for(make("c", Kind.CLAUDE, State.IDLE))[1:]
+    codex = colour_for(make("x", Kind.CODEX_APP, State.IDLE))[1:]
+    grok = (red, green, blue)
+    assert sum(abs(a - b) for a, b in zip(grok, claude)) >= 40
+    assert sum(abs(a - b) for a, b in zip(grok, codex)) >= 40
+
+
+def test_a_grok_agent_waiting_on_you_blinks_white():
+    from launchpad.layout import _WHITE
+
+    waiting = colour_for(make("g", Kind.GROK, State.WAITING))
+    idle = colour_for(make("g", Kind.GROK, State.IDLE))
+    assert waiting[0] == "flash" and waiting[1] == _WHITE
+    assert idle[0] == "rgb"
+
+
 def test_blocked_on_you_is_the_only_thing_that_blinks():
     # Codex threads breathe white, the same palette colour the alert blinks in,
     # so hue alone no longer separates them -- the animation has to. A zone may
@@ -232,7 +282,7 @@ def test_colour_expresses_urgency():
 
 def test_idle_pads_are_bright_enough_to_see():
     # They were originally 8-24 of 127, which is invisible in a lit room.
-    for kind in (Kind.CLAUDE, Kind.CODEX_CLI, Kind.CODEX_APP, Kind.SHELL):
+    for kind in (Kind.CLAUDE, Kind.GROK, Kind.CODEX_CLI, Kind.CODEX_APP, Kind.SHELL):
         _, red, green, blue = colour_for(make("x", kind, State.IDLE))
         assert max(red, green, blue) >= 60, f"{kind} idle colour is too dim"
 
@@ -324,6 +374,17 @@ def test_app_tiles_are_painted_at_their_fixed_pads():
     assert RESCAN_PAD in pads
 
 
+def test_the_grok_strip_head_matches_the_other_agents():
+    from launchpad.layout import _MAGENTA, _WHITE
+
+    waiting = [make("g", Kind.GROK, State.WAITING)]
+    assert summary_colour(Kind.GROK, waiting, False) == ("flash", _WHITE, 0)
+    overflow = summary_colour(Kind.GROK, [make("g", Kind.GROK)], True)
+    assert overflow == ("flash", _MAGENTA, 0)
+    idle = summary_colour(Kind.GROK, [make("g", Kind.GROK)], False)
+    assert idle[0] == "rgb"
+
+
 def test_the_attention_button_only_lights_when_something_waits():
     from launchpad.layout import ATTENTION_PAD
 
@@ -357,10 +418,11 @@ def test_the_whole_board_follows_a_custom_app_row(monkeypatch):
         assert reloaded.APP_COLOURS == {t.key: t.rgb for t in row}
         assert reloaded.GAUGE_TILES == ("app:slack",)
         assert reloaded.BADGE_BLINKS == (), "no Claude tile, so nothing blinks a badge"
-        # Codex rises out of its own tile. Claude has no tile here, so rather
-        # than vanishing its strip takes a column no tile occupies.
+        # Codex rises out of its own tile. Claude and Grok have no tile here,
+        # so rather than vanishing their strips take columns no tile occupies.
         assert {p % 10 for p in reloaded.ZONES[Kind.CODEX_APP]} == {1}
         assert {p % 10 for p in reloaded.ZONES[Kind.CLAUDE]} == {3}
+        assert {p % 10 for p in reloaded.ZONES[Kind.GROK]} == {4}
         assert {p % 10 for p in reloaded.ZONES[Kind.SHELL]} == {8}
     finally:
         monkeypatch.undo()
